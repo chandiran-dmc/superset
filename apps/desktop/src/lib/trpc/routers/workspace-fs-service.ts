@@ -7,7 +7,7 @@ import {
 	type WorkspaceFsPathError,
 	WorkspaceFsWatcherManager,
 } from "@superset/workspace-fs/host";
-import { shell } from "electron";
+import { trashItemCompat } from "main/lib/electron-optional";
 import type {
 	DirectoryEntry,
 	FileSystemChangeEvent,
@@ -89,7 +89,7 @@ export const workspaceFsService = createWorkspaceFsHostService({
 	resolveRootPath: resolveWorkspaceRootPath,
 	watcherManager: filesystemWatcherManager,
 	trashItem: async (absolutePath) => {
-		await shell.trashItem(absolutePath);
+		await trashItemCompat(absolutePath);
 	},
 	...sharedHostServiceOptions,
 });

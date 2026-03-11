@@ -13,9 +13,8 @@ import {
 	AGENT_PRESET_DESCRIPTIONS,
 } from "@superset/shared/agent-command";
 import { TRPCError } from "@trpc/server";
-import { app } from "electron";
-import { quitWithoutConfirmation } from "main/index";
 import { hasCustomRingtone } from "main/lib/custom-ringtones";
+import { relaunchProcessCompat } from "main/lib/electron-optional";
 import { localDb } from "main/lib/local-db";
 import {
 	DEFAULT_AUTO_APPLY_DEFAULT_PRESET,
@@ -497,8 +496,7 @@ export const createSettingsRouter = () => {
 			}),
 
 		restartApp: publicProcedure.mutation(() => {
-			app.relaunch();
-			quitWithoutConfirmation();
+			void relaunchProcessCompat();
 			return { success: true };
 		}),
 

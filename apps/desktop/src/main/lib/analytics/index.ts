@@ -1,4 +1,4 @@
-import { app } from "electron";
+import { createRequire } from "node:module";
 import { env } from "main/env.main";
 import { outlit } from "main/lib/outlit";
 import { PostHog } from "posthog-node";
@@ -7,6 +7,21 @@ import { DEFAULT_TELEMETRY_ENABLED } from "shared/constants";
 
 export let posthog: PostHog | null = null;
 let userId: string | null = null;
+const require = createRequire(import.meta.url);
+
+function getDesktopVersion(): string {
+	try {
+		const electron = require("electron") as {
+			app?: { getVersion: () => string };
+		};
+		if (electron?.app?.getVersion) {
+			return electron.app.getVersion();
+		}
+	} catch {
+		// Non-Electron runtime.
+	}
+	return "web";
+}
 
 function getClient(): PostHog | null {
 	if (!env.NEXT_PUBLIC_POSTHOG_KEY) {
@@ -47,7 +62,7 @@ export function track(
 				...properties,
 				app_name: "desktop",
 				platform: process.platform,
-				desktop_version: app.getVersion(),
+				desktop_version: getDesktopVersion(),
 			},
 		});
 	}

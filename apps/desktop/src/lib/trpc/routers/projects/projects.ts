@@ -12,8 +12,8 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray, isNotNull, isNull, not } from "drizzle-orm";
 import type { BrowserWindow } from "electron";
-import { dialog } from "electron";
 import { track } from "main/lib/analytics";
+import { showOpenDialogCompat } from "main/lib/electron-optional";
 import { localDb } from "main/lib/local-db";
 import {
 	deleteProjectIcon,
@@ -300,13 +300,13 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 			)
 			.mutation(async ({ input }) => {
 				const window = getWindow();
-				if (!window) {
-					return { canceled: true as const, path: null };
-				}
-				const result = await dialog.showOpenDialog(window, {
-					properties: ["openDirectory", "createDirectory"],
-					title: "Select Directory",
-					defaultPath: input.defaultPath,
+				const result = await showOpenDialogCompat({
+					window,
+					options: {
+						properties: ["openDirectory", "createDirectory"],
+						title: "Select Directory",
+						defaultPath: input.defaultPath,
+					},
 				});
 				if (result.canceled || result.filePaths.length === 0) {
 					return { canceled: true as const, path: null };
@@ -653,12 +653,12 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 
 		openNew: publicProcedure.mutation(async (): Promise<OpenNewMultiResult> => {
 			const window = getWindow();
-			if (!window) {
-				return { canceled: false, error: "No window available" };
-			}
-			const result = await dialog.showOpenDialog(window, {
-				properties: ["openDirectory", "multiSelections"],
-				title: "Open Project",
+			const result = await showOpenDialogCompat({
+				window,
+				options: {
+					properties: ["openDirectory", "multiSelections"],
+					title: "Open Project",
+				},
 			});
 
 			if (result.canceled || result.filePaths.length === 0) {
@@ -805,16 +805,12 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 
 					if (!targetDir) {
 						const window = getWindow();
-						if (!window) {
-							return {
-								canceled: false as const,
-								success: false as const,
-								error: "No window available",
-							};
-						}
-						const result = await dialog.showOpenDialog(window, {
-							properties: ["openDirectory", "createDirectory"],
-							title: "Select Clone Destination",
+						const result = await showOpenDialogCompat({
+							window,
+							options: {
+								properties: ["openDirectory", "createDirectory"],
+								title: "Select Clone Destination",
+							},
 						});
 
 						// User canceled - return canceled state (not an error)

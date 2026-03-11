@@ -24,6 +24,8 @@ const envSchema = z.object({
 	NEXT_PUBLIC_POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
 	NEXT_PUBLIC_OUTLIT_KEY: z.string().default(""),
 	SENTRY_DSN_DESKTOP: z.string().optional(),
+	DESKTOP_WEB_MODE: z.string().optional(),
+	DESKTOP_BACKEND_URL: z.url().default("http://127.0.0.1:3211"),
 });
 
 /**
@@ -48,15 +50,22 @@ const rawEnv = {
 		| string
 		| undefined,
 	SENTRY_DSN_DESKTOP: import.meta.env.SENTRY_DSN_DESKTOP as string | undefined,
+	DESKTOP_WEB_MODE: import.meta.env.DESKTOP_WEB_MODE as string | undefined,
+	DESKTOP_BACKEND_URL: process.env.DESKTOP_BACKEND_URL,
 };
 
 // Only allow skipping validation in development (never in production)
 const SKIP_ENV_VALIDATION =
 	process.env.NODE_ENV === "development" && !!process.env.SKIP_ENV_VALIDATION;
 
+const parsedEnv = SKIP_ENV_VALIDATION
+	? (rawEnv as z.infer<typeof envSchema>)
+	: envSchema.parse(rawEnv);
+
 export const env = {
-	...(SKIP_ENV_VALIDATION
-		? (rawEnv as z.infer<typeof envSchema>)
-		: envSchema.parse(rawEnv)),
+	...parsedEnv,
+	DESKTOP_BACKEND_URL: parsedEnv.DESKTOP_BACKEND_URL ?? "http://127.0.0.1:3211",
+	DESKTOP_WEB_MODE:
+		parsedEnv.DESKTOP_WEB_MODE === "1" || parsedEnv.DESKTOP_WEB_MODE === "true",
 	SKIP_ENV_VALIDATION,
 };

@@ -26,7 +26,6 @@ import {
 import { connect, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { app } from "electron";
 import { SUPERSET_DIR_NAME } from "shared/constants";
 import {
 	type ClearScrollbackRequest,
@@ -297,7 +296,7 @@ export class TerminalHostClient extends EventEmitter {
 	private async connectAndAuthenticate(): Promise<void> {
 		for (let attempt = 0; attempt < 2; attempt++) {
 			if (attempt === 0 && process.env.NODE_ENV === "development") {
-				if (this.isDaemonScriptStale()) {
+				if (await this.isDaemonScriptStale()) {
 					if (DEBUG_CLIENT) {
 						console.log(
 							"[TerminalHostClient] Daemon script rebuilt, restarting...",
@@ -371,14 +370,14 @@ export class TerminalHostClient extends EventEmitter {
 	 * Check if the daemon script has been rebuilt since the daemon was spawned.
 	 * Only used in development mode to detect stale daemons.
 	 */
-	private isDaemonScriptStale(): boolean {
+	private async isDaemonScriptStale(): Promise<boolean> {
 		try {
 			if (!existsSync(SCRIPT_MTIME_PATH)) {
 				return false; // No mtime file = first run or manual cleanup
 			}
 
 			const savedMtime = readFileSync(SCRIPT_MTIME_PATH, "utf-8").trim();
-			const scriptPath = this.getDaemonScriptPath();
+			const scriptPath = await this.getDaemonScriptPath();
 
 			if (!existsSync(scriptPath)) {
 				return false;
@@ -394,9 +393,9 @@ export class TerminalHostClient extends EventEmitter {
 	/**
 	 * Save the daemon script's mtime to detect rebuilds.
 	 */
-	private saveDaemonScriptMtime(): void {
+	private async saveDaemonScriptMtime(): Promise<void> {
 		try {
-			const scriptPath = this.getDaemonScriptPath();
+			const scriptPath = await this.getDaemonScriptPath();
 			if (!existsSync(scriptPath)) {
 				return;
 			}
@@ -1054,7 +1053,7 @@ export class TerminalHostClient extends EventEmitter {
 
 		try {
 			// Get path to daemon script
-			const daemonScript = this.getDaemonScriptPath();
+			const daemonScript = await this.getDaemonScriptPath();
 			if (DEBUG_CLIENT) {
 				console.log(`[TerminalHostClient] Daemon script path: ${daemonScript}`);
 				console.log(
@@ -1101,9 +1100,17 @@ export class TerminalHostClient extends EventEmitter {
 			}
 
 			// Spawn daemon as detached process
+			const isBunRuntime = process.execPath.toLowerCase().includes("bun");
+			const isTsScript = daemonScript.endsWith(".ts");
+			const spawnCommand = process.execPath;
+			const spawnArgs = isTsScript
+				? isBunRuntime
+					? [daemonScript]
+					: ["--import", "tsx", daemonScript]
+				: [daemonScript];
 			let child: ReturnType<typeof spawn> | null = null;
 			try {
-				child = spawn(process.execPath, [daemonScript], {
+				child = spawn(spawnCommand, spawnArgs, {
 					detached: true,
 					stdio: logFd >= 0 ? ["ignore", logFd, logFd] : "ignore",
 					env: {
@@ -1143,7 +1150,7 @@ export class TerminalHostClient extends EventEmitter {
 
 			// In development mode, save the script mtime to detect rebuilds
 			if (process.env.NODE_ENV === "development") {
-				this.saveDaemonScriptMtime();
+				await this.saveDaemonScriptMtime();
 			}
 
 			if (DEBUG_CLIENT) {
@@ -1157,15 +1164,42 @@ export class TerminalHostClient extends EventEmitter {
 	/**
 	 * Get path to daemon script
 	 */
-	private getDaemonScriptPath(): string {
-		if (app.isPackaged) {
-			// Production: script is in app resources
-			return join(app.getAppPath(), "dist", "main", "terminal-host.js");
+	private async getDaemonScriptPath(): Promise<string> {
+		try {
+			const electron = (await import("electron")) as unknown;
+			if (electron && typeof electron === "object") {
+				const app = (
+					electron as {
+						app?: { isPackaged: boolean; getAppPath: () => string };
+					}
+				).app;
+				if (app?.getAppPath) {
+					if (app.isPackaged) {
+						return join(app.getAppPath(), "dist", "main", "terminal-host.js");
+					}
+					return join(app.getAppPath(), "dist", "main", "terminal-host.js");
+				}
+			}
+		} catch {
+			// Non-Electron runtime.
 		}
 
-		// Development: electron-vite outputs to dist/main/
-		const appPath = app.getAppPath();
-		return join(appPath, "dist", "main", "terminal-host.js");
+		// Web/local backend mode:
+		// 1) Prefer built output if it exists
+		// 2) Fall back to source TypeScript entry (works when process is Bun)
+		const builtPath = join(process.cwd(), "dist", "main", "terminal-host.js");
+		if (existsSync(builtPath)) {
+			return builtPath;
+		}
+
+		const sourcePath = join(
+			process.cwd(),
+			"src",
+			"main",
+			"terminal-host",
+			"index.ts",
+		);
+		return sourcePath;
 	}
 
 	/**

@@ -136,17 +136,27 @@ function AuthenticatedLayout() {
 
 	return (
 		<DndProvider manager={dragDropManager}>
-			<CollectionsProvider>
-				<HostServiceProvider>
-					<AgentHooks />
+			{env.DESKTOP_WEB_MODE ? (
+				<>
 					<Outlet />
 					<WorkspaceInitEffects />
 					<NewWorkspaceModal />
 					<InitGitDialog />
 					<TeardownLogsDialog />
-					<Paywall />
-				</HostServiceProvider>
-			</CollectionsProvider>
+				</>
+			) : (
+				<CollectionsProvider>
+					<HostServiceProvider>
+						<AgentHooks />
+						<Outlet />
+						<WorkspaceInitEffects />
+						<NewWorkspaceModal />
+						<InitGitDialog />
+						<TeardownLogsDialog />
+						<Paywall />
+					</HostServiceProvider>
+				</CollectionsProvider>
+			)}
 		</DndProvider>
 	);
 }

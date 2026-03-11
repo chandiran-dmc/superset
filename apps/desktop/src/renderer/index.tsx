@@ -5,6 +5,7 @@ initSentry();
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import ReactDom from "react-dom/client";
 import { BootErrorBoundary } from "./components/BootErrorBoundary";
+import { env } from "./env.renderer";
 import {
 	cleanupBootErrorHandling,
 	initBootErrorHandling,
@@ -48,7 +49,7 @@ const handleDeepLink = (path: string) => {
 const ipcRenderer = window.ipcRenderer as typeof window.ipcRenderer | undefined;
 if (ipcRenderer) {
 	ipcRenderer.on("deep-link-navigate", handleDeepLink);
-} else {
+} else if (!env.DESKTOP_WEB_MODE) {
 	reportBootError(
 		"Renderer preload not available (window.ipcRenderer missing)",
 	);

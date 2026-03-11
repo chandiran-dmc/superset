@@ -6,7 +6,12 @@ import {
 } from "@superset/local-db";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { clipboard, shell } from "electron";
+import {
+	openExternalUrl,
+	openPathCompat,
+	showItemInFolderCompat,
+	writeClipboardTextCompat,
+} from "main/lib/electron-optional";
 import { localDb } from "main/lib/local-db";
 import { z } from "zod";
 import { publicProcedure, router } from "../..";
@@ -57,7 +62,7 @@ async function openPathInApp(
 	app: ExternalApp,
 ): Promise<void> {
 	if (app === "finder") {
-		shell.showItemInFolder(filePath);
+		await showItemInFolderCompat(filePath);
 		return;
 	}
 
@@ -80,7 +85,7 @@ async function openPathInApp(
 		throw lastError;
 	}
 
-	await shell.openPath(filePath);
+	await openPathCompat(filePath);
 }
 
 /**
@@ -91,7 +96,7 @@ export const createExternalRouter = () => {
 	return router({
 		openUrl: publicProcedure.input(z.string()).mutation(async ({ input }) => {
 			try {
-				await shell.openExternal(input);
+				await openExternalUrl(input);
 			} catch (error) {
 				const errorMessage =
 					error instanceof Error ? error.message : "Unknown error";
@@ -106,7 +111,7 @@ export const createExternalRouter = () => {
 		openInFinder: publicProcedure
 			.input(z.string())
 			.mutation(async ({ input }) => {
-				shell.showItemInFolder(input);
+				await showItemInFolderCompat(input);
 			}),
 
 		openInApp: publicProcedure
@@ -141,7 +146,7 @@ export const createExternalRouter = () => {
 			}),
 
 		copyPath: publicProcedure.input(z.string()).mutation(async ({ input }) => {
-			clipboard.writeText(input);
+			await writeClipboardTextCompat(input);
 		}),
 
 		openFileInEditor: publicProcedure
@@ -162,7 +167,7 @@ export const createExternalRouter = () => {
 					// No preferred editor configured yet.
 					// Fall back to OS default file handler so Cmd/Ctrl+click still works
 					// even when Cursor (or any specific editor) isn't installed.
-					await shell.openPath(filePath);
+					await openPathCompat(filePath);
 					return;
 				}
 

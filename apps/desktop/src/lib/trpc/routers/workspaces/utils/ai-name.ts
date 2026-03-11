@@ -1,16 +1,13 @@
-import {
-	generateTitleFromMessage,
-	generateTitleFromMessageWithStreamingModel,
-} from "@superset/chat/host";
 import { workspaces } from "@superset/local-db";
 import { and, eq, isNull } from "drizzle-orm";
-import {
-	callSmallModel,
-	type SmallModelAttempt,
-} from "lib/ai/call-small-model";
+import type { SmallModelAttempt } from "lib/ai/call-small-model";
 import { localDb } from "main/lib/local-db";
 import { deriveWorkspaceTitleFromPrompt } from "shared/utils/workspace-naming";
 import { getWorkspaceAutoRenameDecision } from "./workspace-auto-rename";
+
+const dynamicImport = new Function("specifier", "return import(specifier)") as (
+	specifier: string,
+) => Promise<unknown>;
 
 export type WorkspaceAutoRenameResult =
 	| {
@@ -37,29 +34,73 @@ export async function generateWorkspaceNameFromPrompt(prompt: string): Promise<{
 	usedPromptFallback: boolean;
 	warning?: string;
 }> {
-	const { result, attempts } = await callSmallModel<string>({
-		invoke: async ({ credentials, providerId, providerName, model }) => {
-			if (providerId === "openai" && credentials.kind === "oauth") {
-				return generateTitleFromMessageWithStreamingModel({
-					message: prompt,
-					model: model as never,
-					instructions: "You generate concise workspace titles.",
-				});
-			}
+	let result: string | null = null;
+	let attempts: SmallModelAttempt[] = [];
 
-			return generateTitleFromMessage({
-				message: prompt,
-				agentModel: model,
-				agentId: `workspace-namer-${providerId}`,
-				agentName: "Workspace Namer",
-				instructions: "You generate concise workspace titles.",
-				tracingContext: {
-					surface: "workspace-auto-name",
-					provider: providerName,
-				},
-			});
-		},
-	});
+	try {
+		const [{ callSmallModel }, chatHost] = (await Promise.all([
+			dynamicImport("lib/ai/call-small-model"),
+			dynamicImport("@superset/chat/host"),
+		])) as [
+			{
+				callSmallModel: <T>(args: {
+					invoke: (context: {
+						credentials: { kind: "apiKey" | "oauth" };
+						providerId: string;
+						providerName: string;
+						model: unknown;
+					}) => Promise<T | null | undefined>;
+				}) => Promise<{ result: T | null; attempts: SmallModelAttempt[] }>;
+			},
+			{
+				generateTitleFromMessage: (params: {
+					message: string;
+					agentModel: unknown;
+					agentId: string;
+					agentName: string;
+					instructions: string;
+					tracingContext: { surface: string; provider: string };
+				}) => Promise<string | null>;
+				generateTitleFromMessageWithStreamingModel: (params: {
+					message: string;
+					model: unknown;
+					instructions: string;
+				}) => Promise<string | null>;
+			},
+		];
+
+		const smallModelResult = await callSmallModel<string>({
+			invoke: async ({ credentials, providerId, providerName, model }) => {
+				if (providerId === "openai" && credentials.kind === "oauth") {
+					return chatHost.generateTitleFromMessageWithStreamingModel({
+						message: prompt,
+						model,
+						instructions: "You generate concise workspace titles.",
+					});
+				}
+
+				return chatHost.generateTitleFromMessage({
+					message: prompt,
+					agentModel: model,
+					agentId: `workspace-namer-${providerId}`,
+					agentName: "Workspace Namer",
+					instructions: "You generate concise workspace titles.",
+					tracingContext: {
+						surface: "workspace-auto-name",
+						provider: providerName,
+					},
+				});
+			},
+		});
+		result = smallModelResult.result;
+		attempts = smallModelResult.attempts;
+	} catch (error) {
+		console.warn(
+			"[workspace-ai-name] AI title generation unavailable, using prompt-derived fallback:",
+			error,
+		);
+	}
+
 	if (result !== null && result !== undefined) {
 		return { name: result, usedPromptFallback: false };
 	}

@@ -1,5 +1,6 @@
 import { useParams } from "@tanstack/react-router";
 import { HiOutlineWifi } from "react-icons/hi2";
+import { env } from "renderer/env.renderer";
 import { useOnlineStatus } from "renderer/hooks/useOnlineStatus";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { getWorkspaceDisplayName } from "renderer/lib/getWorkspaceDisplayName";
@@ -67,7 +68,7 @@ export function TopBar() {
 						projectId={workspace.project?.id}
 					/>
 				)}
-				<OrganizationDropdown />
+				{!env.DESKTOP_WEB_MODE && <OrganizationDropdown />}
 				{!isMac && <WindowControls />}
 			</div>
 		</div>

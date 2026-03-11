@@ -3,9 +3,11 @@ import {
 	execFile,
 } from "node:child_process";
 import { promisify } from "node:util";
-import { shellEnv } from "shell-env";
 
 const execFileAsync = promisify(execFile);
+const dynamicImport = new Function("specifier", "return import(specifier)") as (
+	specifier: string,
+) => Promise<unknown>;
 
 // Cache the shell environment to avoid repeated shell spawns
 let cachedEnv: Record<string, string> | null = null;
@@ -30,6 +32,9 @@ class ShellEnvTimeoutError extends Error {
 async function getShellEnvWithTimeout(): Promise<Record<string, string>> {
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 	try {
+		const { shellEnv } = (await dynamicImport("shell-env")) as {
+			shellEnv: () => Promise<Record<string, string>>;
+		};
 		return (await Promise.race([
 			shellEnv() as Promise<Record<string, string>>,
 			new Promise<never>((_resolve, reject) => {
