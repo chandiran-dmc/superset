@@ -2,9 +2,10 @@ import { Input } from "@superset/ui/input";
 import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
-import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { HiMiniXMark } from "react-icons/hi2";
+import { env } from "renderer/env.renderer";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useWorkspaceDeleteHandler } from "renderer/react-query/workspaces";
 import { navigateToWorkspace } from "renderer/routes/_authenticated/_dashboard/utils/workspace-navigation";
@@ -45,7 +46,7 @@ interface WorkspaceListItemProps {
 	orderedWorkspaceIds?: string[];
 }
 
-export function WorkspaceListItem({
+function WorkspaceListItemComponent({
 	id,
 	projectId,
 	worktreePath,
@@ -62,10 +63,13 @@ export function WorkspaceListItem({
 }: WorkspaceListItemProps) {
 	const isBranchWorkspace = type === "branch";
 	const navigate = useNavigate();
-	const matchRoute = useMatchRoute();
-	const [hasHovered, setHasHovered] = useState(false);
+	const params = useParams({ strict: false }) as { workspaceId?: string };
+	const [isHovered, setIsHovered] = useState(false);
+	const isActive = params.workspaceId === id;
+	const shouldTrackWorkspaceStatus = isActive || isHovered;
 	const rename = useWorkspaceRename(id, name, branch);
 	const workspaceStatus = useTabsStore((state) => {
+		if (!shouldTrackWorkspaceStatus) return null;
 		function* paneStatuses() {
 			for (const tab of state.tabs) {
 				if (tab.workspaceId !== id) continue;
@@ -88,16 +92,13 @@ export function WorkspaceListItem({
 			s.activeDragItem?.selectedIds?.includes(id) && s.activeDragItem.id !== id,
 	);
 
-	const isActive = !!matchRoute({
-		to: "/workspace/$workspaceId",
-		params: { workspaceId: id },
-		fuzzy: true,
-	});
-
 	const itemRef = useRef<HTMLElement | null>(null);
 	useEffect(() => {
 		if (isActive) {
-			itemRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+			itemRef.current?.scrollIntoView({
+				block: "nearest",
+				behavior: env.DESKTOP_WEB_MODE ? "auto" : "smooth",
+			});
 		}
 	}, [isActive]);
 
@@ -124,14 +125,14 @@ export function WorkspaceListItem({
 		electronTrpc.workspaces.getGitHubStatus.useQuery(
 			{ workspaceId: id },
 			{
-				enabled: hasHovered && type === "worktree",
+				enabled: (isActive || isHovered) && type === "worktree",
 				staleTime: GITHUB_STATUS_STALE_TIME,
 			},
 		);
 
 	const { status: localChanges } = useGitChangesStatus({
 		worktreePath,
-		enabled: hasHovered && !!worktreePath,
+		enabled: (isActive || isHovered) && !!worktreePath,
 		staleTime: GITHUB_STATUS_STALE_TIME,
 	});
 
@@ -139,9 +140,10 @@ export function WorkspaceListItem({
 		electronTrpc.workspaces.getAheadBehind.useQuery(
 			{ workspaceId: id },
 			{
-				enabled: isBranchWorkspace,
+				enabled: isBranchWorkspace && (isActive || isHovered),
 				staleTime: GITHUB_STATUS_STALE_TIME,
-				refetchInterval: hasHovered ? GITHUB_STATUS_STALE_TIME : false,
+				refetchInterval:
+					isActive || isHovered ? GITHUB_STATUS_STALE_TIME : false,
 			},
 		);
 
@@ -199,8 +201,12 @@ export function WorkspaceListItem({
 	};
 
 	const handleMouseEnter = () => {
-		if (!hasHovered) setHasHovered(true);
+		if (!isHovered) setIsHovered(true);
 		if (isBranchWorkspace) void refetchAheadBehind();
+	};
+
+	const handleMouseLeave = () => {
+		if (isHovered) setIsHovered(false);
 	};
 
 	const handleOpenInFinder = () => {
@@ -240,6 +246,7 @@ export function WorkspaceListItem({
 				showDeleteDialog={showDeleteDialog}
 				setShowDeleteDialog={setShowDeleteDialog}
 				onMouseEnter={handleMouseEnter}
+				onMouseLeave={handleMouseLeave}
 				onClick={handleClick}
 				onDeleteClick={handleDeleteClick}
 				onCopyPath={handleCopyPath}
@@ -270,6 +277,7 @@ export function WorkspaceListItem({
 				}
 			}}
 			onMouseEnter={handleMouseEnter}
+			onMouseLeave={handleMouseLeave}
 			onDoubleClick={isBranchWorkspace ? undefined : rename.startRename}
 			className={cn(
 				"flex w-full pl-3 pr-2 text-sm",
@@ -449,3 +457,6 @@ export function WorkspaceListItem({
 		</>
 	);
 }
+
+export const WorkspaceListItem = memo(WorkspaceListItemComponent);
+WorkspaceListItem.displayName = "WorkspaceListItem";

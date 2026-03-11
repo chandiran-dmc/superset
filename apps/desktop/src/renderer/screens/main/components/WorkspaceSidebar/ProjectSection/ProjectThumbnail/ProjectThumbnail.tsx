@@ -1,5 +1,6 @@
 import { cn } from "@superset/ui/utils";
 import { useState } from "react";
+import { env } from "renderer/env.renderer";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { PROJECT_COLOR_DEFAULT } from "shared/constants/project-colors";
 
@@ -65,6 +66,7 @@ export function ProjectThumbnail({
 	const { data: avatarData } = electronTrpc.projects.getGitHubAvatar.useQuery(
 		{ id: projectId },
 		{
+			enabled: !env.DESKTOP_WEB_MODE && !githubOwner,
 			staleTime: 1000 * 60 * 5,
 			refetchOnWindowFocus: false,
 		},

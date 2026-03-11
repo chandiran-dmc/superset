@@ -43,19 +43,21 @@ export function NewWorkspaceModalContent({
 	useEffect(() => {
 		if (!isOpen) return;
 
-		if (
-			preSelectedProjectId &&
-			preSelectedProjectId !== draft.selectedProjectId
-		) {
-			updateDraft({ selectedProjectId: preSelectedProjectId });
+		// Keep honoring the caller-selected project while the modal is open.
+		// Falling back to recents here can otherwise bounce between ids.
+		if (preSelectedProjectId) {
+			if (preSelectedProjectId !== draft.selectedProjectId) {
+				updateDraft({ selectedProjectId: preSelectedProjectId });
+			}
 			return;
 		}
 
 		const hasSelectedProject = recentProjects.some(
 			(project) => project.id === draft.selectedProjectId,
 		);
-		if (!hasSelectedProject) {
-			updateDraft({ selectedProjectId: recentProjects[0]?.id ?? null });
+		const fallbackProjectId = recentProjects[0]?.id ?? null;
+		if (!hasSelectedProject && fallbackProjectId !== draft.selectedProjectId) {
+			updateDraft({ selectedProjectId: fallbackProjectId });
 		}
 	}, [
 		draft.selectedProjectId,

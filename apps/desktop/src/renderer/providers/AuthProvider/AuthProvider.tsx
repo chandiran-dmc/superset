@@ -1,9 +1,18 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { env } from "renderer/env.renderer";
 import { authClient, setAuthToken, setJwt } from "renderer/lib/auth-client";
 import { SupersetLogo } from "renderer/routes/sign-in/components/SupersetLogo/SupersetLogo";
 import { electronTrpc } from "../../lib/electron-trpc";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+	if (env.DESKTOP_WEB_MODE) {
+		return <>{children}</>;
+	}
+
+	return <AuthProviderWithAuth>{children}</AuthProviderWithAuth>;
+}
+
+function AuthProviderWithAuth({ children }: { children: ReactNode }) {
 	const [isHydrated, setIsHydrated] = useState(false);
 	const { refetch: refetchSession } = authClient.useSession();
 

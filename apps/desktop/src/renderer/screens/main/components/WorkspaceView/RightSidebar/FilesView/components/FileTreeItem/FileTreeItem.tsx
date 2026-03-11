@@ -19,6 +19,7 @@ import {
 	LuPencil,
 	LuTrash2,
 } from "react-icons/lu";
+import { memo } from "react";
 import type { DirectoryEntry } from "shared/file-tree-types";
 import { useFileDrag, usePathActions } from "../../../ChangesView/hooks";
 import { FileIcon } from "../../utils";
@@ -38,7 +39,7 @@ interface FileTreeItemProps {
 	onDelete: (entry: DirectoryEntry) => void;
 }
 
-export function FileTreeItem({
+function FileTreeItemComponent({
 	item,
 	entry,
 	rowHeight,
@@ -197,3 +198,6 @@ export function FileTreeItem({
 		</ContextMenu>
 	);
 }
+
+export const FileTreeItem = memo(FileTreeItemComponent);
+FileTreeItem.displayName = "FileTreeItem";

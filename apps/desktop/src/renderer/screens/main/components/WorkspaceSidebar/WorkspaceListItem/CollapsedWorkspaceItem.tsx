@@ -33,6 +33,7 @@ interface CollapsedWorkspaceItemProps {
 	showDeleteDialog: boolean;
 	setShowDeleteDialog: (open: boolean) => void;
 	onMouseEnter: () => void;
+	onMouseLeave: () => void;
 	onClick: () => void;
 	onDeleteClick: () => void;
 	onCopyPath: () => void;
@@ -50,6 +51,7 @@ export function CollapsedWorkspaceItem({
 	showDeleteDialog,
 	setShowDeleteDialog,
 	onMouseEnter,
+	onMouseLeave,
 	onClick,
 	onDeleteClick,
 	onCopyPath,
@@ -75,6 +77,7 @@ export function CollapsedWorkspaceItem({
 				}
 			}}
 			onMouseEnter={onMouseEnter}
+			onMouseLeave={onMouseLeave}
 			className={cn(
 				"relative flex items-center justify-center size-8 rounded-md",
 				"hover:bg-muted/50 transition-colors",

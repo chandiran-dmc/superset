@@ -48,7 +48,7 @@ export function useGitChangesStatus({
 			defaultBranch: effectiveBaseBranch,
 		},
 		{
-			enabled: enabled && !!worktreePath && !!branchData,
+			enabled: enabled && !!worktreePath,
 			refetchInterval: (query) => {
 				if (!refetchInterval) return false;
 				const data = query.state.data as GitChangesStatus | undefined;

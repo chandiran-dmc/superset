@@ -6,6 +6,10 @@ import {
 } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
 import {
+	defaultRangeExtractor,
+	useVirtualizer,
+} from "@tanstack/react-virtual";
+import {
 	ContextMenu,
 	ContextMenuContent,
 	ContextMenuItem,
@@ -132,11 +136,11 @@ async function restoreExpandedDirectories(
 	}
 }
 
-export function FilesView() {
+export function FilesView({ isActive = true }: { isActive?: boolean } = {}) {
 	const { workspaceId } = useParams({ strict: false });
 	const { data: workspace } = electronTrpc.workspaces.get.useQuery(
 		{ id: workspaceId ?? "" },
-		{ enabled: !!workspaceId },
+		{ enabled: !!workspaceId && isActive },
 	);
 	const worktreePath = workspace?.worktreePath;
 
@@ -148,6 +152,8 @@ export function FilesView() {
 	worktreePathRef.current = worktreePath;
 	const entryCacheRef = useRef(new Map<string, DirectoryEntry>());
 	const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const treeScrollRef = useRef<HTMLDivElement>(null);
+	const treeListRef = useRef<HTMLDivElement>(null);
 	const pendingRefreshRef = useRef<PendingTreeRefresh>({
 		fullRefresh: false,
 		directoryPaths: new Set<string>(),
@@ -222,16 +228,41 @@ export function FilesView() {
 
 	const prevWorktreePathRef = useRef(worktreePath);
 	useEffect(() => {
-		if (
-			worktreePath &&
-			prevWorktreePathRef.current !== worktreePath &&
-			prevWorktreePathRef.current !== undefined
-		) {
+		if (worktreePath && prevWorktreePathRef.current !== worktreePath) {
 			entryCacheRef.current.clear();
 			tree.getItemInstance("root")?.invalidateChildrenIds();
 		}
 		prevWorktreePathRef.current = worktreePath;
 	}, [worktreePath, tree]);
+
+	useEffect(() => {
+		if (!isActive) return;
+		if (!worktreePath) return;
+		let cancelled = false;
+		let attempts = 0;
+
+		const ensureRootExpanded = () => {
+			if (cancelled) return;
+			const rootItem = tree.getItemInstance("root");
+			if (!rootItem) {
+				if (attempts < 10) {
+					attempts += 1;
+					setTimeout(ensureRootExpanded, 25);
+				}
+				return;
+			}
+
+			rootItem.invalidateChildrenIds();
+			if (!rootItem.isExpanded()) {
+				void rootItem.expand();
+			}
+		};
+
+		ensureRootExpanded();
+		return () => {
+			cancelled = true;
+		};
+	}, [isActive, worktreePath, tree]);
 
 	const refreshVisibleDirectories = useCallback(() => {
 		entryCacheRef.current.clear();
@@ -357,7 +388,7 @@ export function FilesView() {
 		(event) => {
 			scheduleRefresh(event);
 		},
-		Boolean(workspaceId && worktreePath),
+		Boolean(isActive && workspaceId && worktreePath),
 	);
 
 	const { createFile, createDirectory, rename, deleteItems, isDeleting } =
@@ -526,6 +557,32 @@ export function FilesView() {
 			isDirectory: result.isDirectory,
 		}));
 	}, [searchResults]);
+	const shouldVirtualizeTree = !isSearching && !newItemMode && !renameEntry;
+	const treeRows = tree
+		.getItems()
+		.map((item: ItemInstance<DirectoryEntry>) => {
+			const data = item.getItemData();
+			if (!data || item.getId() === "root") return null;
+			return { item, data };
+		})
+		.filter(
+			(
+				row,
+			): row is {
+				item: ItemInstance<DirectoryEntry>;
+				data: DirectoryEntry;
+			} => row !== null,
+		);
+
+	const treeVirtualizer = useVirtualizer({
+		count: treeRows.length,
+		getScrollElement: () => treeScrollRef.current,
+		estimateSize: () => ROW_HEIGHT,
+		rangeExtractor: defaultRangeExtractor,
+		overscan: 10,
+		scrollMargin: treeListRef.current?.offsetTop ?? 0,
+	});
+	const virtualTreeItems = treeVirtualizer.getVirtualItems();
 
 	if (!worktreePath) {
 		return (
@@ -549,7 +606,7 @@ export function FilesView() {
 			<div className="flex-1 min-h-0 overflow-hidden">
 				<ContextMenu>
 					<ContextMenuTrigger asChild className="h-full">
-						<div className="h-full overflow-auto">
+						<div ref={treeScrollRef} className="h-full overflow-auto">
 							{newItemMode && newItemParentPath === worktreePath && (
 								<NewItemInput
 									mode={newItemMode}
@@ -595,51 +652,90 @@ export function FilesView() {
 								)
 							) : (
 								<div {...tree.getContainerProps()} className="outline-none">
-									{tree.getItems().map((item: ItemInstance<DirectoryEntry>) => {
-										const data = item.getItemData();
-										if (!data || item.getId() === "root") return null;
-										const showNewItemInput =
-											newItemMode &&
-											data.isDirectory &&
-											data.path === newItemParentPath;
-										const isRenaming = renameEntry?.path === data.path;
-										return (
-											<div key={item.getId()}>
-												{isRenaming ? (
-													<RenameInput
-														entry={data}
-														onSubmit={handleRenameSubmit}
-														onCancel={handleRenameCancel}
-														level={item.getItemMeta().level}
-													/>
-												) : (
-													<FileTreeItem
-														item={item}
-														entry={data}
-														rowHeight={ROW_HEIGHT}
-														indent={TREE_INDENT}
-														worktreePath={worktreePath}
-														projectId={projectId}
-														onActivate={handleFileActivate}
-														onOpenInEditor={handleOpenInEditor}
-														onNewFile={handleNewFile}
-														onNewFolder={handleNewFolder}
-														onRename={handleRename}
-														onDelete={handleDeleteRequest}
-													/>
-												)}
-												{showNewItemInput && (
-													<NewItemInput
-														mode={newItemMode}
-														parentPath={newItemParentPath}
-														onSubmit={handleNewItemSubmit}
-														onCancel={handleNewItemCancel}
-														level={item.getItemMeta().level + 1}
-													/>
-												)}
-											</div>
-										);
-									})}
+									{shouldVirtualizeTree ? (
+										<div
+											ref={treeListRef}
+											className="relative w-full"
+											style={{ height: treeVirtualizer.getTotalSize() }}
+										>
+											{virtualTreeItems.map((virtualRow) => {
+												const row = treeRows[virtualRow.index];
+												if (!row) return null;
+												return (
+													<div
+														key={virtualRow.key}
+														data-index={virtualRow.index}
+														ref={treeVirtualizer.measureElement}
+														className="absolute left-0 w-full"
+														style={{
+															top:
+																virtualRow.start -
+																(treeVirtualizer.options.scrollMargin ?? 0),
+														}}
+													>
+														<FileTreeItem
+															item={row.item}
+															entry={row.data}
+															rowHeight={ROW_HEIGHT}
+															indent={TREE_INDENT}
+															worktreePath={worktreePath}
+															projectId={projectId}
+															onActivate={handleFileActivate}
+															onOpenInEditor={handleOpenInEditor}
+															onNewFile={handleNewFile}
+															onNewFolder={handleNewFolder}
+															onRename={handleRename}
+															onDelete={handleDeleteRequest}
+														/>
+													</div>
+												);
+											})}
+										</div>
+									) : (
+										treeRows.map(({ item, data }) => {
+											const showNewItemInput =
+												newItemMode &&
+												data.isDirectory &&
+												data.path === newItemParentPath;
+											const isRenaming = renameEntry?.path === data.path;
+											return (
+												<div key={item.getId()}>
+													{isRenaming ? (
+														<RenameInput
+															entry={data}
+															onSubmit={handleRenameSubmit}
+															onCancel={handleRenameCancel}
+															level={item.getItemMeta().level}
+														/>
+													) : (
+														<FileTreeItem
+															item={item}
+															entry={data}
+															rowHeight={ROW_HEIGHT}
+															indent={TREE_INDENT}
+															worktreePath={worktreePath}
+															projectId={projectId}
+															onActivate={handleFileActivate}
+															onOpenInEditor={handleOpenInEditor}
+															onNewFile={handleNewFile}
+															onNewFolder={handleNewFolder}
+															onRename={handleRename}
+															onDelete={handleDeleteRequest}
+														/>
+													)}
+													{showNewItemInput && (
+														<NewItemInput
+															mode={newItemMode}
+															parentPath={newItemParentPath}
+															onSubmit={handleNewItemSubmit}
+															onCancel={handleNewItemCancel}
+															level={item.getItemMeta().level + 1}
+														/>
+													)}
+												</div>
+											);
+										})
+									)}
 								</div>
 							)}
 						</div>

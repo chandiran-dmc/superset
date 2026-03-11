@@ -7,7 +7,7 @@ import type { AppRouter } from "lib/trpc/routers";
  * For desktop-specific operations: workspaces, terminal, auth, etc.
  */
 export const electronTrpc = createTRPCReact<AppRouter>({
-	abortOnUnmount: true,
+	abortOnUnmount: false,
 });
 
 export type ElectronRouterOutputs = inferRouterOutputs<AppRouter>;

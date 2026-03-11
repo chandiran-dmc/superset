@@ -34,26 +34,25 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-	const {
-		data: session,
-		isPending,
-		isRefetching,
-		refetch,
-	} = authClient.useSession();
-	const hasLocalToken = !!getAuthToken();
-	const isOnline = useOnlineStatus();
+	if (env.DESKTOP_WEB_MODE) {
+		return <AuthenticatedLayoutWeb />;
+	}
+
+	return <AuthenticatedLayoutDesktop />;
+}
+
+function useCommonAuthenticatedSideEffects() {
+	useAgentHookListener();
+	useUpdateListener();
+	useHotkeysSync();
+}
+
+function useAuthenticatedSubscriptions() {
 	const navigate = useNavigate();
 	const utils = electronTrpc.useUtils();
 	const shownWorkspaceInitWarningsRef = useRef(new Set<string>());
 
-	const isSignedIn = env.SKIP_ENV_VALIDATION || !!session?.user;
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: session?.session?.activeOrganizationId;
-
-	useAgentHookListener();
-	useUpdateListener();
-	useHotkeysSync();
+	useCommonAuthenticatedSideEffects();
 
 	// Workspace initialization progress subscription
 	const updateInitProgress = useWorkspaceInitStore((s) => s.updateProgress);
@@ -94,13 +93,51 @@ function AuthenticatedLayout() {
 			}
 		},
 	});
+}
 
-	if (isPending && !hasLocalToken && !env.SKIP_ENV_VALIDATION) {
+function AuthenticatedLayoutWeb() {
+	useAuthenticatedSubscriptions();
+
+	return (
+		<DndProvider manager={dragDropManager}>
+			<CollectionsProvider>
+				<HostServiceProvider>
+					<AgentHooks />
+					<Outlet />
+					<WorkspaceInitEffects />
+					<NewWorkspaceModal />
+					<InitGitDialog />
+					<TeardownLogsDialog />
+					<Paywall />
+				</HostServiceProvider>
+			</CollectionsProvider>
+		</DndProvider>
+	);
+}
+
+function AuthenticatedLayoutDesktop() {
+	const {
+		data: session,
+		isPending,
+		isRefetching,
+		refetch,
+	} = authClient.useSession();
+	const hasLocalToken = !!getAuthToken();
+	const isOnline = useOnlineStatus();
+	const isSignedIn = env.SKIP_ENV_VALIDATION || !!session?.user;
+	const activeOrganizationId = env.SKIP_ENV_VALIDATION
+		? MOCK_ORG_ID
+		: session?.session?.activeOrganizationId;
+	const shouldEnforceAuth = !env.SKIP_ENV_VALIDATION;
+
+	useAuthenticatedSubscriptions();
+
+	if (isPending && !hasLocalToken && shouldEnforceAuth) {
 		return <Navigate to="/sign-in" replace />;
 	}
 	if (
 		(isPending || (isRefetching && !session?.user && hasLocalToken)) &&
-		!env.SKIP_ENV_VALIDATION
+		shouldEnforceAuth
 	) {
 		return (
 			<div className="flex h-screen w-screen items-center justify-center bg-background">
@@ -136,27 +173,17 @@ function AuthenticatedLayout() {
 
 	return (
 		<DndProvider manager={dragDropManager}>
-			{env.DESKTOP_WEB_MODE ? (
-				<>
+			<CollectionsProvider>
+				<HostServiceProvider>
+					<AgentHooks />
 					<Outlet />
 					<WorkspaceInitEffects />
 					<NewWorkspaceModal />
 					<InitGitDialog />
 					<TeardownLogsDialog />
-				</>
-			) : (
-				<CollectionsProvider>
-					<HostServiceProvider>
-						<AgentHooks />
-						<Outlet />
-						<WorkspaceInitEffects />
-						<NewWorkspaceModal />
-						<InitGitDialog />
-						<TeardownLogsDialog />
-						<Paywall />
-					</HostServiceProvider>
-				</CollectionsProvider>
-			)}
+					<Paywall />
+				</HostServiceProvider>
+			</CollectionsProvider>
 		</DndProvider>
 	);
 }

@@ -32,6 +32,33 @@ export function preloadActiveOrganizationCollections(
 }
 
 export function CollectionsProvider({ children }: { children: ReactNode }) {
+	if (env.DESKTOP_WEB_MODE) {
+		return <CollectionsProviderWeb>{children}</CollectionsProviderWeb>;
+	}
+
+	return <CollectionsProviderDesktop>{children}</CollectionsProviderDesktop>;
+}
+
+function CollectionsProviderWeb({ children }: { children: ReactNode }) {
+	const activeOrganizationId = MOCK_ORG_ID;
+
+	useEffect(() => {
+		preloadActiveOrganizationCollections(activeOrganizationId);
+	}, [activeOrganizationId]);
+
+	const collections = getCollections(activeOrganizationId);
+	const switchOrganization = useCallback(async () => {
+		// Web mode is single-user local mode; organization switching is unavailable.
+	}, []);
+
+	return (
+		<CollectionsContext.Provider value={{ ...collections, switchOrganization }}>
+			{children}
+		</CollectionsContext.Provider>
+	);
+}
+
+function CollectionsProviderDesktop({ children }: { children: ReactNode }) {
 	const { data: session, refetch: refetchSession } = authClient.useSession();
 	const [isSwitching, setIsSwitching] = useState(false);
 	const activeOrganizationId = env.SKIP_ENV_VALIDATION

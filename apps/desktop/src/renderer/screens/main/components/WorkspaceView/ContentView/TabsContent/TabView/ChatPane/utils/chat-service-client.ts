@@ -1,7 +1,9 @@
 import { chatServiceTrpc } from "@superset/chat/client";
+import * as TrpcClient from "@trpc/client";
 import type { TRPCLink } from "@trpc/client";
 import type { AnyRouter } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
+import { env } from "renderer/env.renderer";
 import { sessionIdLink } from "renderer/lib/session-id-link";
 import superjson from "superjson";
 import { ipcLink } from "trpc-electron/renderer";
@@ -17,12 +19,41 @@ function prefixLink<TRouter extends AnyRouter>(
 			);
 }
 
+const localBackendUrl = `${env.DESKTOP_BACKEND_URL}/trpc`;
+const httpSubscriptionLink = (
+	TrpcClient as unknown as {
+		httpSubscriptionLink?: (options: {
+			url: string;
+			transformer: typeof superjson;
+		}) => ReturnType<typeof TrpcClient.httpBatchLink>;
+	}
+).httpSubscriptionLink;
+
 export function createChatServiceIpcClient() {
+	const transportLink = env.DESKTOP_WEB_MODE
+		? TrpcClient.splitLink({
+				condition: (operation) => operation.type === "subscription",
+				true: httpSubscriptionLink
+					? httpSubscriptionLink({
+							url: localBackendUrl,
+							transformer: superjson,
+						})
+					: TrpcClient.httpBatchLink({
+							url: localBackendUrl,
+							transformer: superjson,
+						}),
+				false: TrpcClient.httpBatchLink({
+					url: localBackendUrl,
+					transformer: superjson,
+				}),
+			})
+		: ipcLink({ transformer: superjson });
+
 	return chatServiceTrpc.createClient({
 		links: [
 			prefixLink("chatService"),
 			sessionIdLink(),
-			ipcLink({ transformer: superjson }),
+			transportLink,
 		],
 	});
 }

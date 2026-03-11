@@ -15,13 +15,16 @@ export const Route = createFileRoute("/sign-in/")({
 });
 
 function SignInPage() {
-	const signInMutation = electronTrpc.auth.signIn.useMutation();
-	const { hasLocalToken, isPending, session } = useSessionRecovery();
-
-	// Dev bypass: skip sign-in entirely
-	if (env.SKIP_ENV_VALIDATION) {
+	if (env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION) {
 		return <Navigate to="/workspace" replace />;
 	}
+
+	return <SignInPageWithAuth />;
+}
+
+function SignInPageWithAuth() {
+	const signInMutation = electronTrpc.auth.signIn.useMutation();
+	const { hasLocalToken, isPending, session } = useSessionRecovery();
 
 	// Show loading while session is being fetched
 	if (isPending) {

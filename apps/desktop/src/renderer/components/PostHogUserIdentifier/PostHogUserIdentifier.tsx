@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { env } from "renderer/env.renderer";
 import { track } from "renderer/lib/analytics";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
@@ -7,6 +8,14 @@ import { posthog } from "../../lib/posthog";
 const AUTH_COMPLETED_KEY = "superset_auth_completed";
 
 export function PostHogUserIdentifier() {
+	if (env.DESKTOP_WEB_MODE) {
+		return null;
+	}
+
+	return <PostHogUserIdentifierWithAuth />;
+}
+
+function PostHogUserIdentifierWithAuth() {
 	const { data: session } = authClient.useSession();
 	const user = session?.user;
 	const { mutate: setUserId } = electronTrpc.analytics.setUserId.useMutation();

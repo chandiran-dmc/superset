@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { trpcServer } from "@hono/trpc-server";
+import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createWebAppRouter } from "lib/trpc/routers/web";
@@ -11,8 +12,12 @@ import {
 	reconcileDaemonSessions,
 	restartDaemon,
 } from "main/lib/terminal";
+import { WebSocketServer } from "ws";
 
 const WEB_BACKEND_PORT = Number(process.env.DESKTOP_WEB_BACKEND_PORT ?? "3211");
+const WEB_BACKEND_WS_PORT = Number(
+	process.env.DESKTOP_WEB_BACKEND_WS_PORT ?? "3212",
+);
 const WEB_FRONTEND_ORIGIN =
 	process.env.DESKTOP_WEB_FRONTEND_ORIGIN ?? "http://127.0.0.1:3210";
 
@@ -84,7 +89,21 @@ async function startWebBackend(): Promise<void> {
 		},
 	);
 
+	const wss = new WebSocketServer({
+		port: WEB_BACKEND_WS_PORT,
+		host: "0.0.0.0",
+	});
+	const wsHandler = applyWSSHandler({
+		wss,
+		router: appRouter,
+	});
+	console.log(
+		`[web-backend] tRPC websocket listening on ws://127.0.0.1:${WEB_BACKEND_WS_PORT}`,
+	);
+
 	const shutdown = async () => {
+		wsHandler.broadcastReconnectNotification();
+		wss.close();
 		server.close();
 		await restartDaemon().catch(() => {
 			// Best-effort.

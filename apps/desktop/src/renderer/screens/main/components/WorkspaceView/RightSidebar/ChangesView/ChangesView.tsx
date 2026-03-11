@@ -81,7 +81,7 @@ export function ChangesView({
 	const trpcUtils = electronTrpc.useUtils();
 	const { data: workspace } = electronTrpc.workspaces.get.useQuery(
 		{ id: workspaceId ?? "" },
-		{ enabled: !!workspaceId },
+		{ enabled: !!workspaceId && isActive },
 	);
 	const worktreePath = workspace?.worktreePath;
 	const projectId = workspace?.projectId;
@@ -89,6 +89,7 @@ export function ChangesView({
 	const { status, isLoading, effectiveBaseBranch, branchData, refetch } =
 		useGitChangesStatus({
 			worktreePath,
+			enabled: isActive,
 			refetchInterval: isActive ? 2500 : undefined,
 			refetchOnWindowFocus: isActive,
 			branchRefetchInterval: isActive

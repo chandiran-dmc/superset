@@ -35,6 +35,8 @@ type UnregisterCallback = (paneId: string) => void;
 
 const attachInFlightByPane = new Map<string, number>();
 const attachWaitersByPane = new Map<string, Set<() => void>>();
+const PENDING_INPUT_FLUSH_INTERVAL_MS = 25;
+const MAX_PENDING_INPUT_BYTES = 64 * 1024;
 
 function markAttachInFlight(paneId: string, attachId: number): void {
 	attachInFlightByPane.set(paneId, attachId);
@@ -214,6 +216,47 @@ export function useTerminalLifecycle({
 		let attachSequence = 0;
 		let activeAttachId = 0;
 		let cancelAttachWait: (() => void) | null = null;
+		let pendingInput = "";
+		let pendingInputFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const enqueuePendingInput = (data: string) => {
+			if (!data) return;
+
+			const next = pendingInput + data;
+			pendingInput =
+				next.length > MAX_PENDING_INPUT_BYTES
+					? next.slice(-MAX_PENDING_INPUT_BYTES)
+					: next;
+
+			if (pendingInputFlushTimer) return;
+			pendingInputFlushTimer = setTimeout(() => {
+				pendingInputFlushTimer = null;
+				flushPendingInput();
+			}, PENDING_INPUT_FLUSH_INTERVAL_MS);
+		};
+
+		const flushPendingInput = () => {
+			if (!pendingInput || isUnmounted) return;
+
+			if (
+				isRestoredModeRef.current ||
+				connectionErrorRef.current ||
+				isExitedRef.current ||
+				!isStreamReadyRef.current
+			) {
+				if (!pendingInputFlushTimer) {
+					pendingInputFlushTimer = setTimeout(() => {
+						pendingInputFlushTimer = null;
+						flushPendingInput();
+					}, PENDING_INPUT_FLUSH_INTERVAL_MS);
+				}
+				return;
+			}
+
+			const buffered = pendingInput;
+			pendingInput = "";
+			writeRef.current({ paneId, data: buffered });
+		};
 
 		const {
 			xterm,
@@ -295,6 +338,7 @@ export function useTerminalLifecycle({
 					onSuccess: (result) => {
 						pendingInitialStateRef.current = result;
 						maybeApplyInitialState();
+						flushPendingInput();
 					},
 					onError: (error) => {
 						console.error("[Terminal] Failed to restart:", error);
@@ -309,7 +353,14 @@ export function useTerminalLifecycle({
 		restartTerminalRef.current = restartTerminalSession;
 
 		const handleTerminalInput = (data: string) => {
-			if (isRestoredModeRef.current || connectionErrorRef.current) return;
+			if (
+				isRestoredModeRef.current ||
+				connectionErrorRef.current ||
+				!isStreamReadyRef.current
+			) {
+				enqueuePendingInput(data);
+				return;
+			}
 			if (isExitedRef.current) {
 				if (!isFocusedRef.current || wasKilledByUserRef.current) return;
 				restartTerminalSession();
@@ -442,6 +493,7 @@ export function useTerminalLifecycle({
 
 								pendingInitialStateRef.current = result;
 								maybeApplyInitialState();
+								flushPendingInput();
 							},
 							onError: (error) => {
 								if (!isAttachActive()) return;
@@ -488,6 +540,14 @@ export function useTerminalLifecycle({
 
 		const handleWrite = (data: string) => {
 			if (isExitedRef.current) return;
+			if (
+				isRestoredModeRef.current ||
+				connectionErrorRef.current ||
+				!isStreamReadyRef.current
+			) {
+				enqueuePendingInput(data);
+				return;
+			}
 			writeRef.current({ paneId, data });
 		};
 
@@ -647,6 +707,11 @@ export function useTerminalLifecycle({
 			}
 			clearAttachInFlight(paneId, cleanupAttachId);
 			if (firstRenderFallback) clearTimeout(firstRenderFallback);
+			if (pendingInputFlushTimer) {
+				clearTimeout(pendingInputFlushTimer);
+				pendingInputFlushTimer = null;
+			}
+			pendingInput = "";
 			cancelReattachRecovery();
 			document.removeEventListener("visibilitychange", handleVisibilityChange);
 			window.removeEventListener("focus", handleWindowFocus);

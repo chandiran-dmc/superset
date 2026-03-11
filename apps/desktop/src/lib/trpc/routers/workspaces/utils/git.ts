@@ -37,6 +37,13 @@ interface ExecFileException extends Error {
 	stderr?: string;
 }
 
+const STATUS_NO_LOCK_CACHE_TTL_MS = 1_000;
+const statusNoLockCache = new Map<
+	string,
+	{ value: StatusResult; expiresAt: number }
+>();
+const statusNoLockInFlight = new Map<string, Promise<StatusResult>>();
+
 function isExecFileException(error: unknown): error is ExecFileException {
 	return (
 		error instanceof Error &&
@@ -131,44 +138,71 @@ async function getGitEnv(): Promise<Record<string, string>> {
  * Returns a StatusResult-compatible object that can be used with parseGitStatus.
  */
 export async function getStatusNoLock(repoPath: string): Promise<StatusResult> {
-	const env = await getGitEnv();
+	const now = Date.now();
+	const cached = statusNoLockCache.get(repoPath);
+	if (cached && cached.expiresAt > now) {
+		return cached.value;
+	}
 
-	try {
-		// Run git status with --no-optional-locks to avoid holding locks
-		// Use porcelain=v1 for machine-parseable output, -b for branch info
-		// Use -z for NUL-terminated output (handles filenames with special chars)
-		// Use -uall to show individual files in untracked directories (not just the directory)
-		// Note: porcelain=v1 already includes rename info (R/C status codes) without needing -M
-		const { stdout } = await execFileAsync(
-			"git",
-			[
-				"--no-optional-locks",
-				"-C",
-				repoPath,
-				"status",
-				"--porcelain=v1",
-				"-b",
-				"-z",
-				"-uall",
-			],
-			{ env, timeout: 30_000 },
-		);
+	const inFlight = statusNoLockInFlight.get(repoPath);
+	if (inFlight) {
+		return inFlight;
+	}
 
-		return parsePortelainStatus(stdout);
-	} catch (error) {
-		// Provide more descriptive error messages
-		if (isExecFileException(error)) {
-			if (error.code === "ENOENT") {
-				throw new Error("Git is not installed or not found in PATH");
+	const statusPromise = (async (): Promise<StatusResult> => {
+		const env = await getGitEnv();
+
+		try {
+			// Run git status with --no-optional-locks to avoid holding locks
+			// Use porcelain=v1 for machine-parseable output, -b for branch info
+			// Use -z for NUL-terminated output (handles filenames with special chars)
+			// Use -uall to show individual files in untracked directories (not just the directory)
+			// Note: porcelain=v1 already includes rename info (R/C status codes) without needing -M
+			const { stdout } = await execFileAsync(
+				"git",
+				[
+					"--no-optional-locks",
+					"-C",
+					repoPath,
+					"status",
+					"--porcelain=v1",
+					"-b",
+					"-z",
+					"-uall",
+				],
+				{ env, timeout: 30_000 },
+			);
+
+			const parsed = parsePortelainStatus(stdout);
+			statusNoLockCache.set(repoPath, {
+				value: parsed,
+				expiresAt: Date.now() + STATUS_NO_LOCK_CACHE_TTL_MS,
+			});
+			return parsed;
+		} catch (error) {
+			// Provide more descriptive error messages
+			if (isExecFileException(error)) {
+				if (error.code === "ENOENT") {
+					throw new Error("Git is not installed or not found in PATH");
+				}
+				const stderr = error.stderr || error.message || "";
+				if (stderr.includes("not a git repository")) {
+					throw new NotGitRepoError(repoPath);
+				}
 			}
-			const stderr = error.stderr || error.message || "";
-			if (stderr.includes("not a git repository")) {
-				throw new NotGitRepoError(repoPath);
-			}
+			throw new Error(
+				`Failed to get git status: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
-		throw new Error(
-			`Failed to get git status: ${error instanceof Error ? error.message : String(error)}`,
-		);
+	})();
+
+	statusNoLockInFlight.set(repoPath, statusPromise);
+	try {
+		return await statusPromise;
+	} finally {
+		if (statusNoLockInFlight.get(repoPath) === statusPromise) {
+			statusNoLockInFlight.delete(repoPath);
+		}
 	}
 }
 

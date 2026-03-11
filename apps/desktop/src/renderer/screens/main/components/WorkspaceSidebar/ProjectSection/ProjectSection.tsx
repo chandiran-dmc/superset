@@ -207,7 +207,11 @@ export function ProjectSection({
 					"flex flex-col items-center py-2 border-b border-border last:border-b-0",
 					isDragging && "opacity-30",
 				)}
-				style={{ cursor: isDragging ? "grabbing" : "grab" }}
+				style={{
+					cursor: isDragging ? "grabbing" : "grab",
+					contentVisibility: "auto",
+					containIntrinsicSize: "280px",
+				}}
 			>
 				<ProjectHeader
 					projectId={projectId}
@@ -285,7 +289,11 @@ export function ProjectSection({
 				"border-b border-border last:border-b-0",
 				isDragging && "opacity-30",
 			)}
-			style={{ cursor: isDragging ? "grabbing" : "grab" }}
+			style={{
+				cursor: isDragging ? "grabbing" : "grab",
+				contentVisibility: "auto",
+				containIntrinsicSize: "380px",
+			}}
 		>
 			<ProjectHeader
 				projectId={projectId}

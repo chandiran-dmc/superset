@@ -1,10 +1,27 @@
+import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { generateManifest } from "material-icon-theme";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const OUT_DIR = resolve(ROOT, "src/resources/public/file-icons");
-const ICONS_SRC = resolve(ROOT, "node_modules/material-icon-theme/icons");
+const require = createRequire(import.meta.url);
+
+function resolveIconsSourceDir(): string {
+	const packageJsonPath = require.resolve("material-icon-theme/package.json", {
+		paths: [ROOT],
+	});
+	const packageRoot = dirname(packageJsonPath);
+	const iconsDir = resolve(packageRoot, "icons");
+
+	if (!existsSync(iconsDir)) {
+		throw new Error(
+			`material-icon-theme icons directory not found at ${iconsDir}`,
+		);
+	}
+
+	return iconsDir;
+}
 
 interface CondensedManifest {
 	fileNames: Record<string, string>;
@@ -17,6 +34,7 @@ interface CondensedManifest {
 }
 
 function run() {
+	const iconsSourceDir = resolveIconsSourceDir();
 	const manifest = generateManifest({
 		activeIconPack: "react",
 		folders: { theme: "specific" },
@@ -64,7 +82,7 @@ function run() {
 	// Copy only referenced SVGs
 	let copied = 0;
 	for (const iconName of referencedIcons) {
-		const srcPath = resolve(ICONS_SRC, `${iconName}.svg`);
+		const srcPath = resolve(iconsSourceDir, `${iconName}.svg`);
 		const destPath = resolve(OUT_DIR, `${iconName}.svg`);
 		if (existsSync(srcPath)) {
 			cpSync(srcPath, destPath);

@@ -16,6 +16,7 @@ import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { env } from "renderer/env.renderer";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
@@ -42,6 +43,14 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 export function CreateOrganization() {
+	if (env.DESKTOP_WEB_MODE) {
+		return <Navigate to="/workspace" replace />;
+	}
+
+	return <CreateOrganizationWithAuth />;
+}
+
+function CreateOrganizationWithAuth() {
 	const { data: session } = authClient.useSession();
 	const isSignedIn = !!session?.user;
 	const activeOrganizationId = session?.session?.activeOrganizationId;

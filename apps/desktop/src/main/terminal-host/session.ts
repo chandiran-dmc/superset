@@ -9,7 +9,9 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { Socket } from "node:net";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import { getShellArgs } from "../lib/agent-setup/shell-wrappers";
 import { buildSafeEnv } from "../lib/terminal/env";
@@ -46,6 +48,72 @@ const ATTACH_FLUSH_TIMEOUT_MS = 500;
  * 2MB is generous - typical large paste is ~50KB.
  */
 const MAX_SUBPROCESS_STDIN_QUEUE_BYTES = 2_000_000;
+
+function resolvePtySubprocessScriptPath(): string {
+	const candidates = [
+		path.join(__dirname, "pty-subprocess.js"),
+		path.join(__dirname, "pty-subprocess.ts"),
+		path.join(process.cwd(), "dist", "main", "pty-subprocess.js"),
+		path.join(process.cwd(), "src", "main", "terminal-host", "pty-subprocess.ts"),
+	];
+
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) {
+			return candidate;
+		}
+	}
+
+	throw new Error(
+		`PTY subprocess script not found. Checked: ${candidates.join(", ")}`,
+	);
+}
+
+function resolvePtySubprocessLaunch(scriptPath: string): {
+	command: string;
+	args: string[];
+} {
+	const isTypeScript = scriptPath.endsWith(".ts");
+	const isBunRuntime = process.execPath.toLowerCase().includes("bun");
+	if (!isTypeScript || isBunRuntime) {
+		return {
+			command: process.execPath,
+			args: [scriptPath],
+		};
+	}
+
+	return {
+		command: process.execPath,
+		args: ["--import", "tsx", scriptPath],
+	};
+}
+
+function resolveSessionCwd(cwd: string): string {
+	if (cwd && existsSync(cwd)) {
+		return cwd;
+	}
+
+	const fallbackCandidates = [
+		process.env.HOME,
+		process.env.USERPROFILE,
+		homedir(),
+		process.cwd(),
+		"/",
+	];
+
+	for (const candidate of fallbackCandidates) {
+		if (candidate && existsSync(candidate)) {
+			console.warn(
+				`[TerminalHost] Requested cwd does not exist: ${cwd}. Falling back to: ${candidate}`,
+			);
+			return candidate;
+		}
+	}
+
+	console.warn(
+		`[TerminalHost] Requested cwd does not exist and no fallback was found: ${cwd}. Using "/"`,
+	);
+	return "/";
+}
 
 type SpawnProcess = (
 	command: string,
@@ -185,6 +253,7 @@ export class Session {
 		}
 
 		const { cwd, cols, rows, env } = options;
+		const spawnCwd = resolveSessionCwd(cwd);
 
 		// In normal flow, caller provides a prebuilt terminal env.
 		// Fall back to process.env only if env was omitted.
@@ -193,14 +262,18 @@ export class Session {
 		processEnv.TERM = "xterm-256color";
 
 		const shellArgs = getShellArgs(this.shell);
-		const subprocessPath = path.join(__dirname, "pty-subprocess.js");
+		const subprocessScript = resolvePtySubprocessScriptPath();
+		const subprocessLaunch = resolvePtySubprocessLaunch(subprocessScript);
 
 		// Spawn subprocess with filtered env to prevent leaking NODE_ENV etc.
-		const electronPath = process.execPath;
-		this.subprocess = this.spawnProcess(electronPath, [subprocessPath], {
-			stdio: ["pipe", "pipe", "inherit"],
-			env: { ...processEnv, ELECTRON_RUN_AS_NODE: "1" },
-		});
+		this.subprocess = this.spawnProcess(
+			subprocessLaunch.command,
+			subprocessLaunch.args,
+			{
+				stdio: ["pipe", "pipe", "inherit"],
+				env: { ...processEnv, ELECTRON_RUN_AS_NODE: "1" },
+			},
+		);
 
 		// Read framed messages from subprocess stdout
 		if (this.subprocess.stdout) {
@@ -237,11 +310,14 @@ export class Session {
 		this.pendingSpawn = {
 			shell: this.shell,
 			args: shellArgs,
-			cwd,
+			cwd: spawnCwd,
 			cols,
 			rows,
 			env: processEnv,
 		};
+
+		// Keep emulator cwd in sync with the actual spawn cwd.
+		this.emulator.setCwd(spawnCwd);
 	}
 
 	private pendingSpawn: {

@@ -8,6 +8,7 @@ import {
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { env } from "renderer/env.renderer";
+import { MOCK_ORG_ID } from "shared/constants";
 
 let authToken: string | null = null;
 
@@ -35,7 +36,7 @@ export function getJwt(): string | null {
  * Bearer authentication configured via onRequest hook.
  * Server has bearer() plugin enabled to accept bearer tokens.
  */
-export const authClient = createAuthClient({
+const cloudAuthClient = createAuthClient({
 	baseURL: env.NEXT_PUBLIC_API_URL,
 	plugins: [
 		organizationClient(),
@@ -60,3 +61,58 @@ export const authClient = createAuthClient({
 		},
 	},
 });
+
+const WEB_USER_ID = "local-user";
+
+const webSessionData = {
+	user: {
+		id: WEB_USER_ID,
+		name: "Local User",
+		email: "local@localhost",
+		image: null,
+	},
+	session: {
+		id: "local-session",
+		userId: WEB_USER_ID,
+		activeOrganizationId: MOCK_ORG_ID,
+	},
+};
+
+const webActiveOrganizationData = {
+	id: MOCK_ORG_ID,
+	name: "Local",
+	slug: "local",
+	logo: null,
+	metadata: null,
+	members: [
+		{
+			id: "local-member",
+			organizationId: MOCK_ORG_ID,
+			userId: WEB_USER_ID,
+			role: "owner",
+			createdAt: new Date(0),
+		},
+	],
+};
+
+const webAuthClient = {
+	...cloudAuthClient,
+	useSession: () =>
+		({
+			data: webSessionData,
+			error: null,
+			isPending: false,
+			isRefetching: false,
+			refetch: async () => ({ data: webSessionData, error: null }),
+		}) as unknown as ReturnType<typeof cloudAuthClient.useSession>,
+	useActiveOrganization: () =>
+		({
+			data: webActiveOrganizationData,
+			error: null,
+			isPending: false,
+			isRefetching: false,
+			refetch: async () => ({ data: webActiveOrganizationData, error: null }),
+		}) as unknown as ReturnType<typeof cloudAuthClient.useActiveOrganization>,
+} as typeof cloudAuthClient;
+
+export const authClient = env.DESKTOP_WEB_MODE ? webAuthClient : cloudAuthClient;

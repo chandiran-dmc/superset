@@ -3,12 +3,26 @@ import type { ReactNode } from "react";
 import { PostHogUserIdentifier } from "renderer/components/PostHogUserIdentifier";
 import { TelemetrySync } from "renderer/components/TelemetrySync";
 import { ThemedToaster } from "renderer/components/ThemedToaster";
+import { env } from "renderer/env.renderer";
 import { AuthProvider } from "renderer/providers/AuthProvider";
 import { ElectronTRPCProvider } from "renderer/providers/ElectronTRPCProvider";
 import { OutlitProvider } from "renderer/providers/OutlitProvider";
 import { PostHogProvider } from "renderer/providers/PostHogProvider";
 
 export function RootLayout({ children }: { children: ReactNode }) {
+	if (env.DESKTOP_WEB_MODE) {
+		return (
+			<PostHogProvider>
+				<ElectronTRPCProvider>
+					<TelemetrySync />
+					{children}
+					<ThemedToaster />
+					<Alerter />
+				</ElectronTRPCProvider>
+			</PostHogProvider>
+		);
+	}
+
 	return (
 		<PostHogProvider>
 			<OutlitProvider>

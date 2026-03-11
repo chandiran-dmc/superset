@@ -64,6 +64,9 @@ type OpenNewMultiResult =
 	| { canceled: false; multi: true; results: FolderOutcome[] }
 	| OpenNewError;
 
+const FAILED_OWNER_CACHE_TTL_MS = 10 * 60 * 1000;
+const failedOwnerLookupAtByProjectId = new Map<string, number>();
+
 async function initGitRepo(path: string): Promise<{ defaultBranch: string }> {
 	const git = await getSimpleGitWithShellPath(path);
 
@@ -1236,33 +1239,33 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 					.get();
 
 				if (!project) {
-					console.log("[getGitHubAvatar] Project not found:", input.id);
 					return null;
 				}
 
 				if (project.githubOwner) {
-					console.log(
-						"[getGitHubAvatar] Using cached owner:",
-						project.githubOwner,
-					);
+					failedOwnerLookupAtByProjectId.delete(project.id);
 					return {
 						owner: project.githubOwner,
 						avatarUrl: getGitHubAvatarUrl(project.githubOwner),
 					};
 				}
 
-				console.log(
-					"[getGitHubAvatar] Fetching owner for:",
-					project.mainRepoPath,
-				);
-				const owner = await fetchGitHubOwner(project.mainRepoPath);
-
-				if (!owner) {
-					console.log("[getGitHubAvatar] Failed to fetch owner");
+				const lastFailedLookupAt = failedOwnerLookupAtByProjectId.get(project.id);
+				if (
+					lastFailedLookupAt &&
+					Date.now() - lastFailedLookupAt < FAILED_OWNER_CACHE_TTL_MS
+				) {
 					return null;
 				}
 
-				console.log("[getGitHubAvatar] Fetched owner:", owner);
+				const owner = await fetchGitHubOwner(project.mainRepoPath);
+
+				if (!owner) {
+					failedOwnerLookupAtByProjectId.set(project.id, Date.now());
+					return null;
+				}
+
+				failedOwnerLookupAtByProjectId.delete(project.id);
 
 				localDb
 					.update(projects)

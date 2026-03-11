@@ -37,6 +37,10 @@ export function useTerminalModes(): UseTerminalModesReturn {
 	const modeScanBufferRef = useRef("");
 
 	const updateModesFromData = useCallback((data: string) => {
+		if (modeScanBufferRef.current.length === 0 && !data.includes("\x1b")) {
+			return;
+		}
+
 		// Escape sequences can be split across streamed frames, so scan using a small carry buffer.
 		const combined = modeScanBufferRef.current + data;
 

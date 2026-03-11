@@ -19,6 +19,21 @@ import {
 } from "../utils/git";
 import { fetchGitHubPRStatus } from "../utils/github";
 
+const AHEAD_BEHIND_CACHE_TTL_MS = 30_000;
+const GITHUB_STATUS_CACHE_TTL_MS = 60_000;
+
+type AheadBehindResult = Awaited<ReturnType<typeof getAheadBehindCount>>;
+type GitHubStatusResult = Awaited<ReturnType<typeof fetchGitHubPRStatus>>;
+
+const aheadBehindCache = new Map<
+	string,
+	{ value: AheadBehindResult; expiresAt: number }
+>();
+const githubStatusCache = new Map<
+	string,
+	{ value: GitHubStatusResult; expiresAt: number }
+>();
+
 export const createGitStatusProcedures = () => {
 	return router({
 		refreshGitStatus: publicProcedure
@@ -96,10 +111,22 @@ export const createGitStatusProcedures = () => {
 					return { ahead: 0, behind: 0 };
 				}
 
-				return getAheadBehindCount({
+				const cacheKey = `${workspace.id}:${workspace.branch}:${project.mainRepoPath}`;
+				const now = Date.now();
+				const cached = aheadBehindCache.get(cacheKey);
+				if (cached && cached.expiresAt > now) {
+					return cached.value;
+				}
+
+				const fresh = await getAheadBehindCount({
 					repoPath: project.mainRepoPath,
 					defaultBranch: workspace.branch,
 				});
+				aheadBehindCache.set(cacheKey, {
+					value: fresh,
+					expiresAt: now + AHEAD_BEHIND_CACHE_TTL_MS,
+				});
+				return fresh;
 			}),
 
 		getGitHubStatus: publicProcedure
@@ -117,7 +144,17 @@ export const createGitStatusProcedures = () => {
 					return null;
 				}
 
+				const now = Date.now();
+				const cached = githubStatusCache.get(worktree.id);
+				if (cached && cached.expiresAt > now) {
+					return cached.value;
+				}
+
 				const freshStatus = await fetchGitHubPRStatus(worktree.path);
+				githubStatusCache.set(worktree.id, {
+					value: freshStatus,
+					expiresAt: now + GITHUB_STATUS_CACHE_TTL_MS,
+				});
 
 				if (freshStatus) {
 					localDb

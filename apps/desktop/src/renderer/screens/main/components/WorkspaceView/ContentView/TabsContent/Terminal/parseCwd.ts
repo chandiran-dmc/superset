@@ -7,6 +7,7 @@
 
 const ESC = "\x1b";
 const BEL = "\x07";
+const OSC7_SENTINEL = `${ESC}]7;file://`;
 
 // Match OSC 7 sequences: ESC]7;file://hostname/path followed by BEL or ST (ESC\)
 const OSC7_PATTERN = new RegExp(
@@ -19,6 +20,10 @@ const OSC7_PATTERN = new RegExp(
  * Returns the last (most recent) directory found, or null if none.
  */
 export function parseCwd(data: string): string | null {
+	if (!data.includes(OSC7_SENTINEL)) {
+		return null;
+	}
+
 	let lastMatch: string | null = null;
 
 	for (const match of data.matchAll(OSC7_PATTERN)) {

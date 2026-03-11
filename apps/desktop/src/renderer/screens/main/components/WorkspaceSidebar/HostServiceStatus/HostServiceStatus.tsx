@@ -35,6 +35,14 @@ type CloudWhoamiResult = Awaited<
 >;
 
 export function HostServiceStatus() {
+	if (env.DESKTOP_WEB_MODE) {
+		return null;
+	}
+
+	return <HostServiceStatusInner />;
+}
+
+function HostServiceStatusInner() {
 	const enabled = useFeatureFlagEnabled(FEATURE_FLAGS.V2_CLOUD);
 	const { services } = useHostService();
 	const { data: session } = authClient.useSession();

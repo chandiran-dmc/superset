@@ -18,12 +18,14 @@ import type {
 	SelectWorkspace,
 } from "@superset/db/schema";
 import type { AppRouter } from "@superset/trpc";
+import { localOnlyCollectionOptions } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import type { Collection } from "@tanstack/react-db";
 import { createCollection } from "@tanstack/react-db";
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import { env } from "renderer/env.renderer";
 import { getAuthToken, getJwt } from "renderer/lib/auth-client";
+import { MOCK_ORG_ID } from "shared/constants";
 import superjson from "superjson";
 import { z } from "zod";
 
@@ -68,6 +70,62 @@ interface OrgCollections {
 // Per-org collections cache
 const collectionsCache = new Map<string, OrgCollections>();
 
+function createLocalCollection<T extends { id: string }>(
+	id: string,
+	initialData: T[] = [],
+): Collection<T> {
+	return createCollection(
+		localOnlyCollectionOptions<T>({
+			id,
+			getKey: (item) => item.id,
+			initialData,
+		}),
+	);
+}
+
+function createLocalOrgCollections(organizationId: string): OrgCollections {
+	return {
+		tasks: createLocalCollection<SelectTask>(`tasks-${organizationId}`),
+		taskStatuses: createLocalCollection<SelectTaskStatus>(
+			`task_statuses-${organizationId}`,
+		),
+		projects: createLocalCollection<SelectProject>(`projects-${organizationId}`),
+		workspaces: createLocalCollection<SelectWorkspace>(
+			`workspaces-${organizationId}`,
+		),
+		members: createLocalCollection<SelectMember>(`members-${organizationId}`),
+		users: createLocalCollection<SelectUser>(`users-${organizationId}`),
+		invitations: createLocalCollection<SelectInvitation>(
+			`invitations-${organizationId}`,
+		),
+		agentCommands: createLocalCollection<SelectAgentCommand>(
+			`agent_commands-${organizationId}`,
+		),
+		devicePresence: createLocalCollection<SelectDevicePresence>(
+			`device_presence-${organizationId}`,
+		),
+		integrationConnections: createLocalCollection<IntegrationConnectionDisplay>(
+			`integration_connections-${organizationId}`,
+		),
+		subscriptions: createLocalCollection<SelectSubscription>(
+			`subscriptions-${organizationId}`,
+		),
+		apiKeys: createLocalCollection<ApiKeyDisplay>(`apikeys-${organizationId}`),
+		chatSessions: createLocalCollection<SelectChatSession>(
+			`chat_sessions-${organizationId}`,
+		),
+		sessionHosts: createLocalCollection<SelectSessionHost>(
+			`session_hosts-${organizationId}`,
+		),
+		githubRepositories: createLocalCollection<SelectGithubRepository>(
+			`github_repositories-${organizationId}`,
+		),
+		githubPullRequests: createLocalCollection<SelectGithubPullRequest>(
+			`github_pull_requests-${organizationId}`,
+		),
+	};
+}
+
 // Singleton API client with dynamic auth headers
 const apiClient = createTRPCProxyClient<AppRouter>({
 	links: [
@@ -89,20 +147,37 @@ const electricHeaders = {
 	},
 };
 
-const organizationsCollection = createCollection(
-	electricCollectionOptions<SelectOrganization>({
-		id: "organizations",
-		shapeOptions: {
-			url: electricUrl,
-			params: { table: "auth.organizations" },
-			headers: electricHeaders,
-			columnMapper,
-		},
-		getKey: (item) => item.id,
-	}),
-);
+const organizationsCollection = env.DESKTOP_WEB_MODE
+	? createLocalCollection<SelectOrganization>("organizations", [
+			{
+				id: MOCK_ORG_ID,
+				name: "Local",
+				slug: "local",
+				logo: null,
+				createdAt: new Date(0),
+				metadata: null,
+				stripeCustomerId: null,
+				allowedDomains: [],
+			},
+		])
+	: createCollection(
+			electricCollectionOptions<SelectOrganization>({
+				id: "organizations",
+				shapeOptions: {
+					url: electricUrl,
+					params: { table: "auth.organizations" },
+					headers: electricHeaders,
+					columnMapper,
+				},
+				getKey: (item) => item.id,
+			}),
+		);
 
 function createOrgCollections(organizationId: string): OrgCollections {
+	if (env.DESKTOP_WEB_MODE) {
+		return createLocalOrgCollections(organizationId);
+	}
+
 	const tasks = createCollection(
 		electricCollectionOptions<SelectTask>({
 			id: `tasks-${organizationId}`,
