@@ -13,12 +13,27 @@ This fork runs Superset as:
 - Optional: `gh` (GitHub CLI) for GitHub metadata/PR features
 - Linux only: `zenity` or `kdialog` for native folder/file picker dialogs
 
+## Install
+
+Standard install:
+
+```bash
+bun install
+```
+
+Low-memory VM install (recommended on small Linux VMs):
+
+```bash
+./scripts/install-web-vm.sh
+```
+
+This skips the expensive desktop native rebuild during install and lowers Bun concurrency.
+
 ## Run Locally
 
 From repo root:
 
 ```bash
-bun install
 cd apps/desktop
 bun run dev:web
 ```
@@ -61,6 +76,21 @@ This web mode is intended to keep desktop parity for local workflows:
 
 - If `Open project` does nothing on Linux:
   - install `zenity` or `kdialog`
+
+- If `bun install` gets `Killed` on a VM:
+  - use the VM install script: `./scripts/install-web-vm.sh`
+  - if still failing, add swap and retry:
+    ```bash
+    sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    ```
+  - after install, start with:
+    ```bash
+    cd apps/desktop
+    bun run start:web
+    ```
 
 - If GitHub avatar/PR metadata is missing:
   - install and authenticate `gh` (optional feature)
