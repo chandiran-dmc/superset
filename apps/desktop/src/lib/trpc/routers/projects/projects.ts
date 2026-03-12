@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
-import { access, mkdir, rm } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { access, mkdir, readdir, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import {
 	BRANCH_PREFIX_MODES,
 	EXTERNAL_APPS,
@@ -315,6 +316,52 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 					return { canceled: true as const, path: null };
 				}
 				return { canceled: false as const, path: result.filePaths[0] };
+			}),
+
+		listDirectories: publicProcedure
+			.input(
+				z
+					.object({
+						path: z.string().optional(),
+					})
+					.optional(),
+			)
+			.query(async ({ input }) => {
+				const requestedPath = input?.path?.trim();
+				const currentPath =
+					requestedPath && requestedPath.length > 0 ? requestedPath : homedir();
+
+				const pathStats = statSync(currentPath, { throwIfNoEntry: false });
+				if (!pathStats) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: `Path does not exist: ${currentPath}`,
+					});
+				}
+
+				if (!pathStats.isDirectory()) {
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: `Path is not a directory: ${currentPath}`,
+					});
+				}
+
+				const entries = await readdir(currentPath, { withFileTypes: true });
+				const directories = entries
+					.filter((entry) => entry.isDirectory())
+					.map((entry) => ({
+						name: entry.name,
+						path: join(currentPath, entry.name),
+					}))
+					.sort((a, b) => a.name.localeCompare(b.name));
+
+				const parentPath = dirname(currentPath);
+
+				return {
+					currentPath,
+					parentPath: parentPath === currentPath ? null : parentPath,
+					directories,
+				};
 			}),
 
 		// Fast: returns only local branches + cached remote refs (no network)
@@ -1250,7 +1297,9 @@ export const createProjectsRouter = (getWindow: () => BrowserWindow | null) => {
 					};
 				}
 
-				const lastFailedLookupAt = failedOwnerLookupAtByProjectId.get(project.id);
+				const lastFailedLookupAt = failedOwnerLookupAtByProjectId.get(
+					project.id,
+				);
 				if (
 					lastFailedLookupAt &&
 					Date.now() - lastFailedLookupAt < FAILED_OWNER_CACHE_TTL_MS

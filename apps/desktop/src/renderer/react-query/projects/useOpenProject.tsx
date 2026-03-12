@@ -1,7 +1,10 @@
+import { toast } from "@superset/ui/sonner";
 import { useCallback, useRef } from "react";
+import { env } from "renderer/env.renderer";
 import type { ElectronRouterOutputs } from "renderer/lib/electron-trpc";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useGitInitDialogStore } from "renderer/stores/git-init-dialog";
+import { useProjectPathPickerDialogStore } from "renderer/stores/project-path-picker-dialog";
 import { processOpenNewResults } from "./processOpenNewResults";
 import { useOpenFromPath } from "./useOpenFromPath";
 import { useOpenNew } from "./useOpenNew";
@@ -70,48 +73,14 @@ export function useOpenProject() {
 		[initGitAndOpen, utils],
 	);
 
-	const openNew = useCallback((): Promise<Project[]> => {
+	const openPathPickerDialog = useCallback((): Promise<string[]> => {
 		return new Promise((resolve) => {
-			openNewMutation.mutate(undefined, {
-				onSuccess: (result) => {
-					if (result.canceled) {
-						resolve([]);
-						return;
-					}
-
-					if ("error" in result) {
-						resolve([]);
-						return;
-					}
-
-					if ("results" in result) {
-						const { successes, needsGitInit } = processOpenNewResults({
-							results: result.results,
-						});
-
-						const immediateProjects = successes.map((s) => s.project);
-
-						if (needsGitInit.length > 0) {
-							showDialog({
-								paths: needsGitInit.map((n) => n.selectedPath),
-								immediateSuccesses: immediateProjects,
-								resolve,
-							});
-							return;
-						}
-
-						resolve(immediateProjects);
-						return;
-					}
-
-					resolve([]);
-				},
-				onError: () => {
-					resolve([]);
-				},
+			useProjectPathPickerDialogStore.getState().open({
+				onConfirm: (paths) => resolve(paths),
+				onCancel: () => resolve([]),
 			});
 		});
-	}, [openNewMutation, showDialog]);
+	}, []);
 
 	const openFromPath = useCallback(
 		(path: string): Promise<Project | null> => {
@@ -155,6 +124,71 @@ export function useOpenProject() {
 		},
 		[openFromPathMutation, showDialog],
 	);
+
+	const openNew = useCallback((): Promise<Project[]> => {
+		if (env.DESKTOP_WEB_MODE) {
+			return (async () => {
+				const selectedPaths = await openPathPickerDialog();
+				if (selectedPaths.length === 0) {
+					return [];
+				}
+
+				const openedProjects: Project[] = [];
+				for (const path of selectedPaths) {
+					const project = await openFromPath(path);
+					if (project) {
+						openedProjects.push(project);
+					}
+				}
+
+				if (openedProjects.length === 0) {
+					toast.error("No projects were opened from the provided path(s)");
+				}
+				return openedProjects;
+			})();
+		}
+
+		return new Promise((resolve) => {
+			openNewMutation.mutate(undefined, {
+				onSuccess: async (result) => {
+					if (result.canceled) {
+						resolve([]);
+						return;
+					}
+
+					if ("error" in result) {
+						resolve([]);
+						return;
+					}
+
+					if ("results" in result) {
+						const { successes, needsGitInit } = processOpenNewResults({
+							results: result.results,
+						});
+
+						const immediateProjects = successes.map((s) => s.project);
+
+						if (needsGitInit.length > 0) {
+							showDialog({
+								paths: needsGitInit.map((n) => n.selectedPath),
+								immediateSuccesses: immediateProjects,
+								resolve,
+							});
+							return;
+						}
+
+						resolve(immediateProjects);
+						return;
+					}
+
+					resolve([]);
+				},
+				onError: () => {
+					resolve([]);
+				},
+			});
+		});
+	}, [openNewMutation, openFromPath, openPathPickerDialog, showDialog]);
 
 	return {
 		openNew,

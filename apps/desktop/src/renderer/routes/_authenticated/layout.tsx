@@ -19,6 +19,7 @@ import { dragDropManager } from "renderer/lib/dnd";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { showWorkspaceAutoNameWarningToast } from "renderer/lib/workspaces/showWorkspaceAutoNameWarningToast";
 import { InitGitDialog } from "renderer/react-query/projects/InitGitDialog";
+import { ProjectPathPickerDialog } from "renderer/react-query/projects/ProjectPathPickerDialog";
 import { WorkspaceInitEffects } from "renderer/screens/main/components/WorkspaceInitEffects";
 import { useHotkeysSync } from "renderer/stores/hotkeys";
 import { useAgentHookListener } from "renderer/stores/tabs/useAgentHookListener";
@@ -107,6 +108,7 @@ function AuthenticatedLayoutWeb() {
 					<WorkspaceInitEffects />
 					<NewWorkspaceModal />
 					<InitGitDialog />
+					<ProjectPathPickerDialog />
 					<TeardownLogsDialog />
 					<Paywall />
 				</HostServiceProvider>
@@ -180,6 +182,7 @@ function AuthenticatedLayoutDesktop() {
 					<WorkspaceInitEffects />
 					<NewWorkspaceModal />
 					<InitGitDialog />
+					<ProjectPathPickerDialog />
 					<TeardownLogsDialog />
 					<Paywall />
 				</HostServiceProvider>
