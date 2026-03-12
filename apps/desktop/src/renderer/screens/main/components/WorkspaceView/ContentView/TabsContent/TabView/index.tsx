@@ -1,7 +1,7 @@
 import "react-mosaic-component/react-mosaic-component.css";
 import "./mosaic-theme.css";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	Mosaic,
 	type MosaicBranch,
@@ -40,6 +40,11 @@ export function TabView({ tab }: TabViewProps) {
 	const movePaneToNewTab = useTabsStore((s) => s.movePaneToNewTab);
 	const allTabs = useTabsStore((s) => s.tabs);
 	const allPanes = useTabsStore((s) => s.panes);
+	const focusedPaneId = useTabsStore((s) => s.focusedPaneIds[tab.id] ?? null);
+	const [isNarrowViewport, setIsNarrowViewport] = useState(() => {
+		if (typeof window === "undefined") return false;
+		return window.matchMedia("(max-width: 767px)").matches;
+	});
 
 	// Get workspace path for file viewer panes
 	const { data: workspace } = electronTrpc.workspaces.get.useQuery(
@@ -85,6 +90,20 @@ export function TabView({ tab }: TabViewProps) {
 
 	const validPaneIds = new Set(Object.keys(tabPanes));
 	const cleanedLayout = cleanLayout(tab.layout, validPaneIds);
+	const mobilePaneId = useMemo(() => {
+		if (!isNarrowViewport) return null;
+		if (focusedPaneId && focusedPaneId in tabPanes) return focusedPaneId;
+		return Object.keys(tabPanes)[0] ?? null;
+	}, [focusedPaneId, isNarrowViewport, tabPanes]);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const mediaQuery = window.matchMedia("(max-width: 767px)");
+		const handleChange = () => setIsNarrowViewport(mediaQuery.matches);
+		handleChange();
+		mediaQuery.addEventListener("change", handleChange);
+		return () => mediaQuery.removeEventListener("change", handleChange);
+	}, []);
 
 	// Auto-remove tab when all panes are gone
 	useEffect(() => {
@@ -269,22 +288,39 @@ export function TabView({ tab }: TabViewProps) {
 
 	return (
 		<div className="relative w-full h-full mosaic-container">
-			<Mosaic<string>
-				renderTile={renderPane}
-				value={cleanedLayout}
-				onChange={handleLayoutChange}
-				resize="DISABLED"
-				className={
-					activeTheme?.type === "light"
-						? "mosaic-theme-light"
-						: "mosaic-theme-dark"
-				}
-				dragAndDropManager={dragDropManager}
-			/>
-			<MosaicSplitOverlay
-				layout={cleanedLayout}
-				onLayoutChange={handleSplitLayoutChange}
-			/>
+			{isNarrowViewport && mobilePaneId ? (
+				<Mosaic<string>
+					renderTile={renderPane}
+					value={mobilePaneId}
+					onChange={handleLayoutChange}
+					resize="DISABLED"
+					className={
+						activeTheme?.type === "light"
+							? "mosaic-theme-light"
+							: "mosaic-theme-dark"
+					}
+					dragAndDropManager={dragDropManager}
+				/>
+			) : (
+				<>
+					<Mosaic<string>
+						renderTile={renderPane}
+						value={cleanedLayout}
+						onChange={handleLayoutChange}
+						resize="DISABLED"
+						className={
+							activeTheme?.type === "light"
+								? "mosaic-theme-light"
+								: "mosaic-theme-dark"
+						}
+						dragAndDropManager={dragDropManager}
+					/>
+					<MosaicSplitOverlay
+						layout={cleanedLayout}
+						onLayoutChange={handleSplitLayoutChange}
+					/>
+				</>
+			)}
 		</div>
 	);
 }

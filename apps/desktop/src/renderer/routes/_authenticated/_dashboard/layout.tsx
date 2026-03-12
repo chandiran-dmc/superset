@@ -4,6 +4,7 @@ import {
 	useMatchRoute,
 	useNavigate,
 } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { ResizablePanel } from "renderer/screens/main/components/ResizablePanel";
 import { WorkspaceSidebar } from "renderer/screens/main/components/WorkspaceSidebar";
@@ -23,6 +24,20 @@ export const Route = createFileRoute("/_authenticated/_dashboard")({
 
 function DashboardLayout() {
 	const navigate = useNavigate();
+	const [isNarrowViewport, setIsNarrowViewport] = useState(() => {
+		if (typeof window === "undefined") return false;
+		return window.matchMedia("(max-width: 1023px)").matches;
+	});
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const mediaQuery = window.matchMedia("(max-width: 1023px)");
+		const handleChange = () => setIsNarrowViewport(mediaQuery.matches);
+		handleChange();
+		mediaQuery.addEventListener("change", handleChange);
+		return () => mediaQuery.removeEventListener("change", handleChange);
+	}, []);
+
 	const openNewWorkspaceModal = useOpenNewWorkspaceModal();
 	// Get current workspace from route to pre-select project in new workspace modal
 	const matchRoute = useMatchRoute();
@@ -91,8 +106,8 @@ function DashboardLayout() {
 	return (
 		<div className="flex flex-col h-full w-full">
 			<TopBar />
-			<div className="flex flex-1 overflow-hidden">
-				{isWorkspaceSidebarOpen && (
+			<div className="flex flex-1 min-h-0 overflow-hidden">
+				{isWorkspaceSidebarOpen && !isNarrowViewport && (
 					<ResizablePanel
 						width={workspaceSidebarWidth}
 						onWidthChange={setWorkspaceSidebarWidth}

@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 type HostServiceStatus = "starting" | "running" | "crashed";
@@ -17,7 +18,6 @@ const BASE_RESTART_DELAY = 1_000;
 
 class HostServiceManager {
 	private instances = new Map<string, HostServiceProcess>();
-	private scriptPath = path.join(__dirname, "host-service.js");
 	private authToken: string | null = null;
 	private cloudApiUrl: string | null = null;
 
@@ -65,6 +65,11 @@ class HostServiceManager {
 	}
 
 	private async spawn(organizationId: string): Promise<number> {
+		const scriptPath = await this.getHostServiceScriptPath();
+		if (!existsSync(scriptPath)) {
+			throw new Error(`Host service script not found: ${scriptPath}`);
+		}
+
 		const env: Record<string, string | undefined> = {
 			...process.env,
 			ELECTRON_RUN_AS_NODE: "1",
@@ -77,7 +82,15 @@ class HostServiceManager {
 			env.CLOUD_API_URL = this.cloudApiUrl;
 		}
 
-		const child = spawn(process.execPath, [this.scriptPath], {
+		const isBunRuntime = process.execPath.toLowerCase().includes("bun");
+		const isTsScript = scriptPath.endsWith(".ts");
+		const spawnArgs = isTsScript
+			? isBunRuntime
+				? [scriptPath]
+				: ["--import", "tsx", scriptPath]
+			: [scriptPath];
+
+		const child = spawn(process.execPath, spawnArgs, {
 			stdio: ["ignore", "pipe", "pipe"],
 			env,
 		});
@@ -113,6 +126,56 @@ class HostServiceManager {
 		});
 
 		return this.waitForPort(organizationId);
+	}
+
+	private async getHostServiceScriptPath(): Promise<string> {
+		try {
+			const electron = (await import("electron")) as unknown;
+			if (electron && typeof electron === "object") {
+				const app = (
+					electron as {
+						app?: { getAppPath: () => string };
+					}
+				).app;
+				if (app?.getAppPath) {
+					const appPath = app.getAppPath();
+					const builtPath = path.join(
+						appPath,
+						"dist",
+						"main",
+						"host-service.js",
+					);
+					if (existsSync(builtPath)) {
+						return builtPath;
+					}
+
+					const sourcePath = path.join(
+						appPath,
+						"src",
+						"main",
+						"host-service",
+						"index.ts",
+					);
+					if (existsSync(sourcePath)) {
+						return sourcePath;
+					}
+				}
+			}
+		} catch {
+			// Non-Electron runtime.
+		}
+
+		const builtPath = path.join(
+			process.cwd(),
+			"dist",
+			"main",
+			"host-service.js",
+		);
+		if (existsSync(builtPath)) {
+			return builtPath;
+		}
+
+		return path.join(process.cwd(), "src", "main", "host-service", "index.ts");
 	}
 
 	private waitForPort(organizationId: string): Promise<number> {

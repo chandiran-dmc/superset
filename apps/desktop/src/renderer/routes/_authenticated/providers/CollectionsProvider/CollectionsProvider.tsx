@@ -32,7 +32,7 @@ export function preloadActiveOrganizationCollections(
 }
 
 export function CollectionsProvider({ children }: { children: ReactNode }) {
-	if (env.DESKTOP_WEB_MODE) {
+	if (env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION) {
 		return <CollectionsProviderWeb>{children}</CollectionsProviderWeb>;
 	}
 
@@ -40,13 +40,11 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
 }
 
 function CollectionsProviderWeb({ children }: { children: ReactNode }) {
-	const activeOrganizationId = MOCK_ORG_ID;
-
 	useEffect(() => {
-		preloadActiveOrganizationCollections(activeOrganizationId);
-	}, [activeOrganizationId]);
+		preloadActiveOrganizationCollections(MOCK_ORG_ID);
+	}, []);
 
-	const collections = getCollections(activeOrganizationId);
+	const collections = getCollections(MOCK_ORG_ID);
 	const switchOrganization = useCallback(async () => {
 		// Web mode is single-user local mode; organization switching is unavailable.
 	}, []);

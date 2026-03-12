@@ -1,4 +1,5 @@
 import type { ExternalApp } from "@superset/local-db";
+import { useEffect, useState } from "react";
 import {
 	DEFAULT_SIDEBAR_WIDTH,
 	MAX_SIDEBAR_WIDTH,
@@ -24,6 +25,20 @@ export function WorkspaceLayout({
 	onOpenQuickOpen,
 }: WorkspaceLayoutProps) {
 	useBrowserLifecycle();
+	const [isNarrowViewport, setIsNarrowViewport] = useState(() => {
+		if (typeof window === "undefined") return false;
+		return window.matchMedia("(max-width: 1023px)").matches;
+	});
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const mediaQuery = window.matchMedia("(max-width: 1023px)");
+		const handleChange = () => setIsNarrowViewport(mediaQuery.matches);
+		handleChange();
+		mediaQuery.addEventListener("change", handleChange);
+		return () => mediaQuery.removeEventListener("change", handleChange);
+	}, []);
+
 	const isSidebarOpen = useSidebarStore((s) => s.isSidebarOpen);
 	const sidebarWidth = useSidebarStore((s) => s.sidebarWidth);
 	const setSidebarWidth = useSidebarStore((s) => s.setSidebarWidth);
@@ -46,7 +61,7 @@ export function WorkspaceLayout({
 					/>
 				)}
 			</div>
-			{isSidebarOpen && (
+			{isSidebarOpen && !isNarrowViewport && (
 				<ResizablePanel
 					width={sidebarWidth}
 					onWidthChange={setSidebarWidth}

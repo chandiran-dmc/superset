@@ -5,7 +5,6 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createWebAppRouter } from "lib/trpc/routers/web";
 import { applyShellEnvToProcess } from "lib/trpc/routers/workspaces/utils/shell-env";
-import { setupAgentHooks } from "main/lib/agent-setup";
 import { initAppState } from "main/lib/app-state";
 import {
 	prewarmTerminalRuntime,
@@ -31,10 +30,15 @@ async function initialize(): Promise<void> {
 	await reconcileDaemonSessions();
 	prewarmTerminalRuntime();
 
-	try {
-		setupAgentHooks();
-	} catch (error) {
-		console.error("[web-backend] Failed to set up agent hooks:", error);
+	const shouldEnableAgentHooks =
+		process.env.DESKTOP_WEB_ENABLE_AGENT_HOOKS === "1";
+	if (shouldEnableAgentHooks) {
+		try {
+			const { setupAgentHooks } = await import("main/lib/agent-setup");
+			setupAgentHooks();
+		} catch (error) {
+			console.error("[web-backend] Failed to set up agent hooks:", error);
+		}
 	}
 }
 

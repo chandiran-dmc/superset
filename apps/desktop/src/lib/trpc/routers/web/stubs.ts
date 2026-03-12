@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
+import { extname } from "node:path";
 import { AUTH_PROVIDERS } from "@superset/shared/constants";
 import { observable } from "@trpc/server/observable";
+import { showOpenDialogCompat } from "main/lib/electron-optional";
+import { deriveModelProviderStatus } from "shared/ai/provider-status";
 import { AUTO_UPDATE_STATUS } from "shared/auto-update";
 import { z } from "zod";
 import { publicProcedure, router } from "../..";
@@ -72,11 +76,51 @@ export const createWebWindowRouter = () => {
 					})
 					.optional(),
 			)
-			.mutation(() => ({ canceled: true, path: null })),
-		selectImageFile: publicProcedure.mutation(() => ({
-			canceled: true,
-			dataUrl: null,
-		})),
+			.mutation(async ({ input }) => {
+				const result = await showOpenDialogCompat({
+					options: {
+						properties: ["openDirectory", "createDirectory"],
+						title: input?.title ?? "Select Directory",
+						defaultPath: input?.defaultPath ?? undefined,
+					},
+				});
+
+				if (result.canceled || result.filePaths.length === 0) {
+					return { canceled: true, path: null };
+				}
+
+				return { canceled: false, path: result.filePaths[0] };
+			}),
+		selectImageFile: publicProcedure.mutation(async () => {
+			const result = await showOpenDialogCompat({
+				options: {
+					properties: ["openFile"],
+					title: "Select Organization Logo",
+					filters: [
+						{
+							name: "Images",
+							extensions: ["png", "jpg", "jpeg", "webp"],
+						},
+					],
+				},
+			});
+
+			if (result.canceled || result.filePaths.length === 0) {
+				return { canceled: true, dataUrl: null };
+			}
+
+			try {
+				const filePath = result.filePaths[0];
+				const buffer = await readFile(filePath);
+				const extension = extname(filePath).slice(1).toLowerCase();
+				const mimeType = extension === "jpg" ? "jpeg" : extension || "png";
+				const dataUrl = `data:image/${mimeType};base64,${buffer.toString("base64")}`;
+
+				return { canceled: false, dataUrl };
+			} catch {
+				return { canceled: true, dataUrl: null };
+			}
+		}),
 	});
 };
 
@@ -214,8 +258,228 @@ export const createWebCacheRouter = () => {
 	});
 };
 
+const webAuthStatus = {
+	authenticated: false,
+	method: null,
+	source: null,
+	issue: null,
+	hasManagedOAuth: false,
+} as const;
+
+const webSlashCommands = [
+	{
+		name: "new",
+		aliases: [],
+		description: "Start a new session",
+		argumentHint: "",
+		kind: "builtin" as const,
+		source: "builtin" as const,
+		action: {
+			type: "new_session" as const,
+		},
+	},
+	{
+		name: "clear",
+		aliases: [],
+		description: "Clear context into a fresh session",
+		argumentHint: "",
+		kind: "builtin" as const,
+		source: "builtin" as const,
+		action: {
+			type: "new_session" as const,
+		},
+	},
+	{
+		name: "stop",
+		aliases: [],
+		description: "Stop active response",
+		argumentHint: "",
+		kind: "builtin" as const,
+		source: "builtin" as const,
+		action: {
+			type: "stop_stream" as const,
+		},
+	},
+	{
+		name: "model",
+		aliases: [],
+		description: "Set active model",
+		argumentHint: "<model>",
+		kind: "builtin" as const,
+		source: "builtin" as const,
+		action: {
+			type: "set_model" as const,
+			passArguments: true,
+		},
+	},
+	{
+		name: "mcp",
+		aliases: [],
+		description: "Show MCP server overview",
+		argumentHint: "",
+		kind: "builtin" as const,
+		source: "builtin" as const,
+		action: {
+			type: "show_mcp_overview" as const,
+		},
+	},
+];
+
+function resolveWebSlashCommand(text: string) {
+	const trimmed = text.trim();
+	const match = trimmed.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+	if (!match) {
+		return { handled: false as const };
+	}
+
+	const invokedAs = (match[1] ?? "").toLowerCase();
+	const argument = (match[2] ?? "").trim();
+
+	if (invokedAs === "new" || invokedAs === "clear") {
+		return {
+			handled: true as const,
+			commandName: invokedAs === "clear" ? "clear" : "new",
+			invokedAs,
+			action: {
+				type: "new_session" as const,
+			},
+		};
+	}
+
+	if (invokedAs === "stop") {
+		return {
+			handled: true as const,
+			commandName: "stop",
+			invokedAs,
+			action: {
+				type: "stop_stream" as const,
+			},
+		};
+	}
+
+	if (invokedAs === "model") {
+		return {
+			handled: true as const,
+			commandName: "model",
+			invokedAs,
+			action: {
+				type: "set_model" as const,
+				argument: argument || undefined,
+			},
+		};
+	}
+
+	if (invokedAs === "mcp") {
+		return {
+			handled: true as const,
+			commandName: "mcp",
+			invokedAs,
+			action: {
+				type: "show_mcp_overview" as const,
+			},
+		};
+	}
+
+	return { handled: false as const };
+}
+
 export const createWebChatServiceRouter = () => {
-	return router({});
+	return router({
+		workspace: router({
+			searchFiles: publicProcedure
+				.input(
+					z.object({
+						rootPath: z.string(),
+						query: z.string(),
+						includeHidden: z.boolean().default(false),
+						limit: z.number().default(20),
+					}),
+				)
+				.query(() => []),
+			getSlashCommands: publicProcedure
+				.input(
+					z.object({
+						cwd: z.string(),
+					}),
+				)
+				.query(() => webSlashCommands),
+			getMcpOverview: publicProcedure
+				.input(
+					z.object({
+						cwd: z.string(),
+					}),
+				)
+				.query(() => ({ sourcePath: null, servers: [] })),
+			resolveSlashCommand: publicProcedure
+				.input(
+					z.object({
+						cwd: z.string(),
+						text: z.string(),
+					}),
+				)
+				.mutation(({ input }) => resolveWebSlashCommand(input.text)),
+			previewSlashCommand: publicProcedure
+				.input(
+					z.object({
+						cwd: z.string(),
+						text: z.string(),
+					}),
+				)
+				.query(({ input }) => resolveWebSlashCommand(input.text)),
+		}),
+		auth: router({
+			getAnthropicStatus: publicProcedure.query(() => webAuthStatus),
+			getOpenAIStatus: publicProcedure.query(() => webAuthStatus),
+			startOpenAIOAuth: publicProcedure.mutation(() => ({
+				url: "",
+				instructions: "OpenAI OAuth is unavailable in local web mode",
+			})),
+			completeOpenAIOAuth: publicProcedure
+				.input(z.object({ code: z.string().optional() }))
+				.mutation(() => ({ success: true as const })),
+			cancelOpenAIOAuth: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+			disconnectOpenAIOAuth: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+			startAnthropicOAuth: publicProcedure.mutation(() => ({
+				url: "",
+				instructions: "Anthropic OAuth is unavailable in local web mode",
+			})),
+			completeAnthropicOAuth: publicProcedure
+				.input(z.object({ code: z.string().min(1) }))
+				.mutation(() => ({ success: true as const, expiresAt: Date.now() })),
+			cancelAnthropicOAuth: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+			disconnectAnthropicOAuth: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+			setAnthropicApiKey: publicProcedure
+				.input(z.object({ apiKey: z.string().min(1) }))
+				.mutation(() => ({ success: true as const })),
+			getAnthropicEnvConfig: publicProcedure.query(() => ({
+				envText: "",
+				variables: {},
+			})),
+			setAnthropicEnvConfig: publicProcedure
+				.input(z.object({ envText: z.string() }))
+				.mutation(() => ({ success: true as const })),
+			clearAnthropicEnvConfig: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+			clearAnthropicApiKey: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+			setOpenAIApiKey: publicProcedure
+				.input(z.object({ apiKey: z.string().min(1) }))
+				.mutation(() => ({ success: true as const })),
+			clearOpenAIApiKey: publicProcedure.mutation(() => ({
+				success: true as const,
+			})),
+		}),
+	});
 };
 
 export const createWebChatMastraServiceRouter = () => {
@@ -223,7 +487,25 @@ export const createWebChatMastraServiceRouter = () => {
 };
 
 export const createWebModelProvidersRouter = () => {
-	return router({});
+	return router({
+		getStatuses: publicProcedure.query(() => {
+			return [
+				deriveModelProviderStatus({
+					providerId: "anthropic",
+					authStatus: webAuthStatus,
+					diagnostic: null,
+				}),
+				deriveModelProviderStatus({
+					providerId: "openai",
+					authStatus: webAuthStatus,
+					diagnostic: null,
+				}),
+			];
+		}),
+		clearIssue: publicProcedure
+			.input(z.object({ providerId: z.enum(["anthropic", "openai"]) }))
+			.mutation(() => ({ success: true as const })),
+	});
 };
 
 export const createWebHostServiceManagerRouter = () => {

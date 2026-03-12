@@ -94,7 +94,8 @@ const webLinks = [
 	}),
 ];
 
-const links = env.DESKTOP_WEB_MODE ? webLinks : electronLinks;
+const links =
+	env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION ? webLinks : electronLinks;
 
 /** Electron tRPC React client for React hooks (used by ElectronTRPCProvider). */
 export const electronReactClient = electronTrpc.createClient({

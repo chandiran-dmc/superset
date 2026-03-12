@@ -43,7 +43,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 export function CreateOrganization() {
-	if (env.DESKTOP_WEB_MODE) {
+	if (env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION) {
 		return <Navigate to="/workspace" replace />;
 	}
 

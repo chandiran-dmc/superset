@@ -18,6 +18,8 @@ const FALLBACK_CACHE_TTL_MS = 10_000; // 10 second cache for fallback (retry soo
 const TIMEOUT_FALLBACK_CACHE_TTL_MS = 60_000; // 1 minute fallback when shell startup hangs
 const SHELL_ENV_TIMEOUT_MS = 8_000;
 let fallbackCacheTtlMs = FALLBACK_CACHE_TTL_MS;
+const MISSING_COMMAND_CACHE_TTL_MS = 60_000;
+const missingCommandsUntil = new Map<string, number>();
 
 // Track PATH fix state for macOS GUI app PATH fix
 let pathFixAttempted = false;
@@ -27,6 +29,15 @@ class ShellEnvTimeoutError extends Error {
 	constructor(timeoutMs: number) {
 		super(`[shell-env] Timed out after ${timeoutMs}ms`);
 	}
+}
+
+function isEnoentError(error: unknown): error is Error & { code: string } {
+	return (
+		error instanceof Error &&
+		"code" in error &&
+		typeof error.code === "string" &&
+		error.code === "ENOENT"
+	);
 }
 
 async function getShellEnvWithTimeout(): Promise<Record<string, string>> {
@@ -66,6 +77,19 @@ export async function getShellEnvironment(
 	options?: GetShellEnvironmentOptions,
 ): Promise<Record<string, string>> {
 	const now = Date.now();
+	const isWebMode =
+		process.env.DESKTOP_WEB_MODE === "1" ||
+		process.env.DESKTOP_WEB_MODE === "true";
+	const shellEnvDisabled = process.env.SUPERSET_DISABLE_SHELL_ENV === "1";
+	if (isWebMode || shellEnvDisabled) {
+		const fallback = copyStringEnv(process.env);
+		cachedEnv = fallback;
+		cacheTime = now;
+		isFallbackCache = false;
+		fallbackCacheTtlMs = FALLBACK_CACHE_TTL_MS;
+		return { ...fallback };
+	}
+
 	const ttl = isFallbackCache ? fallbackCacheTtlMs : CACHE_TTL_MS;
 	if (!options?.forceRefresh && cachedEnv && now - cacheTime < ttl) {
 		return { ...cachedEnv };
@@ -186,26 +210,40 @@ export async function execWithShellEnv(
 	args: string[],
 	options?: Omit<ExecFileOptionsWithStringEncoding, "encoding">,
 ): Promise<{ stdout: string; stderr: string }> {
+	const now = Date.now();
+	const unavailableUntil = missingCommandsUntil.get(cmd);
+	if (typeof unavailableUntil === "number" && unavailableUntil > now) {
+		const error = new Error(`Command not found: ${cmd}`) as Error & {
+			code: string;
+		};
+		error.code = "ENOENT";
+		throw error;
+	}
+
 	const baseEnv = options?.env
 		? { ...process.env, ...options.env }
 		: process.env;
 
 	try {
-		return await execFileAsync(cmd, args, {
+		const result = await execFileAsync(cmd, args, {
 			...options,
 			encoding: "utf8",
 			env: await getProcessEnvWithShellEnv(baseEnv),
 		});
+		missingCommandsUntil.delete(cmd);
+		return result;
 	} catch (error) {
+		if (isEnoentError(error)) {
+			missingCommandsUntil.set(cmd, Date.now() + MISSING_COMMAND_CACHE_TTL_MS);
+		}
+
 		// Only retry on ENOENT (command not found), only on macOS
 		// Skip if we've already successfully fixed PATH, or if a fix attempt is in progress
 		if (
 			process.platform !== "darwin" ||
 			pathFixSucceeded ||
 			pathFixAttempted ||
-			!(error instanceof Error) ||
-			!("code" in error) ||
-			error.code !== "ENOENT"
+			!isEnoentError(error)
 		) {
 			throw error;
 		}
@@ -230,6 +268,7 @@ export async function execWithShellEnv(
 				encoding: "utf8",
 				env: retryEnv,
 			});
+			missingCommandsUntil.delete(cmd);
 
 			// Persist the fix to process.env only after the retry succeeds.
 			if (shellEnvResult.PATH) {
@@ -243,6 +282,12 @@ export async function execWithShellEnv(
 			// Shell env derivation or retry failed - allow future retries
 			pathFixAttempted = false;
 			pathFixSucceeded = false;
+			if (isEnoentError(retryError)) {
+				missingCommandsUntil.set(
+					cmd,
+					Date.now() + MISSING_COMMAND_CACHE_TTL_MS,
+				);
+			}
 			console.error("[shell-env] Retry failed:", retryError);
 			throw retryError;
 		}

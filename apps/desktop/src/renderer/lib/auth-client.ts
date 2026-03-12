@@ -115,4 +115,7 @@ const webAuthClient = {
 		}) as unknown as ReturnType<typeof cloudAuthClient.useActiveOrganization>,
 } as typeof cloudAuthClient;
 
-export const authClient = env.DESKTOP_WEB_MODE ? webAuthClient : cloudAuthClient;
+export const authClient =
+	env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION
+		? webAuthClient
+		: cloudAuthClient;

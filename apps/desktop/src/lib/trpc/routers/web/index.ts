@@ -2,8 +2,10 @@ import { router } from "../..";
 import { createAnalyticsRouter } from "../analytics";
 import { createBrowserHistoryRouter } from "../browser-history";
 import { createChangesRouter } from "../changes";
+import { createConfigRouter } from "../config";
 import { createExternalRouter } from "../external";
 import { createFilesystemRouter } from "../filesystem";
+import { createHostServiceManagerRouter } from "../host-service-manager";
 import { createMenuRouter } from "../menu";
 import { createPortsRouter } from "../ports";
 import { createProjectsRouter } from "../projects";
@@ -18,8 +20,6 @@ import {
 	createWebCacheRouter,
 	createWebChatMastraServiceRouter,
 	createWebChatServiceRouter,
-	createWebConfigRouter,
-	createWebHostServiceManagerRouter,
 	createWebHotkeysRouter,
 	createWebModelProvidersRouter,
 	createWebNotificationsRouter,
@@ -54,10 +54,10 @@ export const createWebAppRouter = () => {
 		hotkeys: createWebHotkeysRouter(),
 		external: createExternalRouter(),
 		settings: createSettingsRouter(),
-		config: createWebConfigRouter(),
+		config: createConfigRouter(),
 		uiState: createUiStateRouter(),
 		ringtone: createWebRingtoneRouter(),
-		hostServiceManager: createWebHostServiceManagerRouter(),
+		hostServiceManager: createHostServiceManagerRouter(),
 	});
 };
 

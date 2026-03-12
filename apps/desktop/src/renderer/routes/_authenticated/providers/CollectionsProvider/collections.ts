@@ -30,6 +30,7 @@ import superjson from "superjson";
 import { z } from "zod";
 
 const columnMapper = snakeCamelMapper();
+const isLocalCollectionsMode = env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION;
 
 const electricUrl = `${env.NEXT_PUBLIC_ELECTRIC_URL}/v1/shape`;
 
@@ -89,7 +90,9 @@ function createLocalOrgCollections(organizationId: string): OrgCollections {
 		taskStatuses: createLocalCollection<SelectTaskStatus>(
 			`task_statuses-${organizationId}`,
 		),
-		projects: createLocalCollection<SelectProject>(`projects-${organizationId}`),
+		projects: createLocalCollection<SelectProject>(
+			`projects-${organizationId}`,
+		),
 		workspaces: createLocalCollection<SelectWorkspace>(
 			`workspaces-${organizationId}`,
 		),
@@ -147,7 +150,7 @@ const electricHeaders = {
 	},
 };
 
-const organizationsCollection = env.DESKTOP_WEB_MODE
+const organizationsCollection = isLocalCollectionsMode
 	? createLocalCollection<SelectOrganization>("organizations", [
 			{
 				id: MOCK_ORG_ID,
@@ -174,7 +177,7 @@ const organizationsCollection = env.DESKTOP_WEB_MODE
 		);
 
 function createOrgCollections(organizationId: string): OrgCollections {
-	if (env.DESKTOP_WEB_MODE) {
+	if (isLocalCollectionsMode) {
 		return createLocalOrgCollections(organizationId);
 	}
 

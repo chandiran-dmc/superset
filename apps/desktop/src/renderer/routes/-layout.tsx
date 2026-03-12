@@ -10,7 +10,7 @@ import { OutlitProvider } from "renderer/providers/OutlitProvider";
 import { PostHogProvider } from "renderer/providers/PostHogProvider";
 
 export function RootLayout({ children }: { children: ReactNode }) {
-	if (env.DESKTOP_WEB_MODE) {
+	if (env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION) {
 		return (
 			<PostHogProvider>
 				<ElectronTRPCProvider>

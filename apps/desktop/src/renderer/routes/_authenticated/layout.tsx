@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-	if (env.DESKTOP_WEB_MODE) {
+	if (env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION) {
 		return <AuthenticatedLayoutWeb />;
 	}
 

@@ -1,4 +1,5 @@
 import { useParams } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { HiOutlineWifi } from "react-icons/hi2";
 import { env } from "renderer/env.renderer";
 import { useOnlineStatus } from "renderer/hooks/useOnlineStatus";
@@ -13,6 +14,20 @@ import { SidebarToggle } from "./components/SidebarToggle";
 import { WindowControls } from "./components/WindowControls";
 
 export function TopBar() {
+	const [isNarrowViewport, setIsNarrowViewport] = useState(() => {
+		if (typeof window === "undefined") return false;
+		return window.matchMedia("(max-width: 1023px)").matches;
+	});
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const mediaQuery = window.matchMedia("(max-width: 1023px)");
+		const handleChange = () => setIsNarrowViewport(mediaQuery.matches);
+		handleChange();
+		mediaQuery.addEventListener("change", handleChange);
+		return () => mediaQuery.removeEventListener("change", handleChange);
+	}, []);
+
 	const { data: platform } = electronTrpc.window.getPlatform.useQuery();
 	const { workspaceId } = useParams({ strict: false });
 	const { data: workspace } = electronTrpc.workspaces.get.useQuery(
@@ -28,15 +43,15 @@ export function TopBar() {
 			<div
 				className="flex items-center gap-1.5 h-full"
 				style={{
-					paddingLeft: isMac ? "88px" : "16px",
+					paddingLeft: isMac && !isNarrowViewport ? "88px" : "16px",
 				}}
 			>
 				<SidebarToggle />
 				<NavigationControls />
-				<ResourceConsumption />
+				{!isNarrowViewport && <ResourceConsumption />}
 			</div>
 
-			{workspaceId && (
+			{workspaceId && !isNarrowViewport && (
 				<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
 					<div className="pointer-events-auto">
 						<SearchBarTrigger
@@ -54,11 +69,11 @@ export function TopBar() {
 				</div>
 			)}
 
-			<div className="flex items-center gap-3 h-full pr-4 shrink-0">
+			<div className="flex items-center gap-2 h-full pr-3 shrink-0">
 				{!isOnline && (
 					<div className="no-drag flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
 						<HiOutlineWifi className="size-3.5" />
-						<span>Offline</span>
+						{!isNarrowViewport && <span>Offline</span>}
 					</div>
 				)}
 				{workspace?.worktreePath && (
@@ -68,7 +83,9 @@ export function TopBar() {
 						projectId={workspace.project?.id}
 					/>
 				)}
-				{!env.DESKTOP_WEB_MODE && <OrganizationDropdown />}
+				{!(env.DESKTOP_WEB_MODE || env.SKIP_ENV_VALIDATION) && (
+					<OrganizationDropdown />
+				)}
 				{!isMac && <WindowControls />}
 			</div>
 		</div>
